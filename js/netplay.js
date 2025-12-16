@@ -341,10 +341,14 @@ export async function sweepLobbySlots({db, api, lobbyId, maxTeams=10}){
       }
     }
     const assignedAt = sv?.lastAssignedAt || sv?.createdAt || 0;
-    const stale = assignedAt && (now - assignedAt > 120000); // 2min
-    const empty = !players || keys.length===0 || live===0;
+    // "나가면 흔적 없게"를 위해, 플레이어가 완전히 0명이 되면 빠르게 정리합니다.
+    // (onDisconnect/remove가 이미 처리되고, 방이 빈 상태가 10초 이상 지속될 때만 삭제)
+    const emptyHard = players && keys.length === 0;
+    const emptyOrDead = !players || keys.length===0 || live===0;
+    const emptyGrace = assignedAt && (now - assignedAt > 10000); // 10s
+    const stale = assignedAt && (now - assignedAt > 120000); // 2min (fallback)
 
-    if(empty && stale){
+    if((emptyHard && emptyGrace) || (emptyOrDead && stale)){
       // delete room children + clear slot
       await hardDeleteRoom({db, api, roomId: roomKey}).catch(()=>{});
       await api.remove(api.ref(db, SLOT_PATH(lobbyId, slot))).catch(()=>{});

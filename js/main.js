@@ -1,317 +1,334 @@
 import { initFirebase } from "./firebase.js";
-import { createAudio } from "./audio.js";
-import { initMatchButton } from "./match.js";
-import { MergeGame, drawOpponent } from "./mergegame.js";
-import { CpuController } from "./cpu.js";
-import { fitCanvases } from "./touch.js";
 import {
   joinLobby, watchRoom, roomRefs,
+  setRoomState,
   publishMyState, subscribeOppState,
-  pushEvent, subscribeEvents
+  pushEvent, subscribeEvents,
+  tryCleanupRoom, releaseSlot, sweepLobbySlots
 } from "./netplay.js";
 
-const $ = (id)=>document.getElementById(id);
-
+// --- UI
 const ui = {
-  cvMe: $("cvMe"),
-  cvOpp: $("cvOpp"),
-  cvNext: $("cvNext"),
-  score: $("score"),
-  level: $("level"),
-  mode: $("mode"),
-  oppTag: $("oppTag"),
-  comboNum: $("comboNum"),
-  btnStartCpu: $("btnStartCpu"),
-  btnRestart: $("btnRestart"),
-  btnSound: $("btnSound"),
-  btnMatch: $("btnMatch"),
-  btnFull: $("btnFull"),
-  overlay: $("overlay"),
-  overlayTitle: $("overlayTitle"),
-  overlayDesc: $("overlayDesc"),
+  matchBtn: document.getElementById("match-btn"),
+  status: document.getElementById("net-status"),
+  oppTitle: document.getElementById("opp-title"),
+  oppCanvas: document.getElementById("opp-canvas"),
 };
 
-function safeSetText(el, txt){ if(el) el.textContent = String(txt); }
-
-function showOverlay(title, desc, {showCpuBtn=false}={}){
-  if(ui.overlay) ui.overlay.classList.remove("hidden");
-  safeSetText(ui.overlayTitle, title || "");
-  safeSetText(ui.overlayDesc, desc || "");
-  if(ui.btnStartCpu) ui.btnStartCpu.style.display = showCpuBtn ? "inline-flex" : "none";
+function setStatus(t){
+  if(ui.status) ui.status.textContent = t;
 }
-function hideOverlay(){ if(ui.overlay) ui.overlay.classList.add("hidden"); }
 
-// --- Audio
-const audio = createAudio({ musicUrl: "./assets/arcade-music.mp3" });
-function syncSoundIcon(){
-  if(!ui.btnSound) return;
-  ui.btnSound.textContent = audio.muted ? "🔇" : "🔊";
+if(ui.matchBtn){
+  ui.matchBtn.addEventListener("click", ()=>location.reload());
 }
-ui.btnSound?.addEventListener("click", ()=>{
-  try{ audio.toggle(); }catch{}
-  syncSoundIcon();
-});
-syncSoundIcon();
 
-// match button (reload)
-initMatchButton({ buttonEl: ui.btnMatch, audio });
+// --- Online flow
+function stableLobbyId(){
+  const s = location.origin + location.pathname;
+  // FNV-1a 32-bit
+  let h = 0x811c9dc5;
+  for(let i=0;i<s.length;i++){
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return "suika_" + (h>>>0).toString(36);
+}
 
-// fullscreen
-ui.btnFull?.addEventListener("click", ()=>{
-  const el = document.documentElement;
-  try{
-    if(!document.fullscreenElement) el.requestFullscreen?.();
-    else document.exitFullscreen?.();
-  }catch{}
-});
-
-// --- game instances
-let meGame = null;
-let cpuGame = null;
-let cpuCtl = null;
-
-let mode = "init"; // online | cpu
-let raf = 0;
-
-// --- online state
-let db=null, api=null;
-let roomId="", pid="";
-let metaRef=null, playersRef=null, statesRef=null, eventsRef=null;
+let fb=null, db=null, api=null;
+let lobbyId="", roomId="", mySlot=null, pid="";
+let hbTimer=null;
+let refs=null;
 let roomUnsub=null, oppUnsub=null, evUnsub=null;
+let publishTimer=null;
+let sweepTimer=null;
+let mode="offline";
 
-let oppObjects = null;
+// game instance
+let game=null;
 
-// --- sizing
-const PLAY_ROWS = 23;
-function fit(){
-  fitCanvases(ui.cvMe, ui.cvOpp, ui.cvNext, PLAY_ROWS);
-  meGame?.resizeToCanvas?.();
-  cpuGame?.resizeToCanvas?.();
+// Opp render
+const oppCtx = ui.oppCanvas ? ui.oppCanvas.getContext("2d") : null;
+function drawOpp(state){
+  if(!oppCtx || !ui.oppCanvas) return;
+  const cv = ui.oppCanvas;
+  oppCtx.clearRect(0,0,cv.width,cv.height);
+
+  // background
+  oppCtx.fillStyle = "rgba(255,255,255,0.35)";
+  oppCtx.fillRect(0,0,cv.width,cv.height);
+
+  if(!state || !state.bodies || !state.w || !state.h) return;
+
+  const shapes = window.SHAPES || [];
+  const scaleX = cv.width / state.w;
+  const scaleY = cv.height / state.h;
+  const scale = Math.min(scaleX, scaleY);
+
+  for(const b of state.bodies){
+    const x = b.x * scaleX;
+    const y = b.y * scaleY;
+    const a = b.a || 0;
+    const isRock = !!b.r;
+
+    let size = (shapes[b.i]?.size || (shapes[0]?.size || 14)) * scale;
+    if(size < 2) size = 2;
+
+    oppCtx.save();
+    oppCtx.translate(x,y);
+    oppCtx.rotate(a);
+
+    if(isRock){
+      drawRock(oppCtx, size);
+    }else{
+      const type = shapes[b.i]?.type || "circle";
+      const color = shapes[b.i]?.color || "#FF6B6B";
+      drawShape(oppCtx, type, color, size);
+    }
+
+    oppCtx.restore();
+  }
 }
-window.addEventListener("resize", fit);
-window.addEventListener("orientationchange", fit);
-fit();
 
-// --- input (watermelon-like)
-let dragging = false;
+function drawShape(ctx, type, color, size){
+  ctx.fillStyle = color;
+  ctx.strokeStyle = "rgba(0,0,0,0.25)";
+  ctx.lineWidth = Math.max(1, size * 0.12);
 
-function canvasToWorldX(ev){
-  const rect = ui.cvMe.getBoundingClientRect();
-  const x = (ev.clientX - rect.left) * (ui.cvMe.width / rect.width);
-  return x;
+  ctx.beginPath();
+  if(type === "circle" || type === "bigcircle"){
+    ctx.arc(0,0,size,0,Math.PI*2);
+  }else if(type === "triangle"){
+    poly(ctx, 3, size);
+  }else if(type === "pentagon"){
+    poly(ctx, 5, size);
+  }else if(type === "hexagon"){
+    poly(ctx, 6, size);
+  }else if(type === "square"){
+    ctx.rect(-size*0.8,-size*0.8,size*1.6,size*1.6);
+  }else if(type === "rectangle"){
+    ctx.rect(-size*1.1,-size*0.6,size*2.2,size*1.2);
+  }else if(type === "diamond"){
+    ctx.moveTo(0,-size);
+    ctx.lineTo(size*0.75,0);
+    ctx.lineTo(0,size);
+    ctx.lineTo(-size*0.75,0);
+    ctx.closePath();
+  }else if(type === "isoceles"){
+    ctx.moveTo(0,-size*1.3);
+    ctx.lineTo(size*0.7,size*0.7);
+    ctx.lineTo(-size*0.7,size*0.7);
+    ctx.closePath();
+  }else{
+    ctx.arc(0,0,size,0,Math.PI*2);
+  }
+
+  ctx.fill();
+  ctx.stroke();
 }
 
-function attachInput(game){
-  if(!ui.cvMe || !game) return;
+function poly(ctx, n, r){
+  for(let i=0;i<n;i++){
+    const ang = (Math.PI*2*i)/n - Math.PI/2;
+    const x = Math.cos(ang)*r;
+    const y = Math.sin(ang)*r;
+    if(i===0) ctx.moveTo(x,y);
+    else ctx.lineTo(x,y);
+  }
+  ctx.closePath();
+}
 
-  ui.cvMe.addEventListener("pointerdown", (ev)=>{
-    dragging = true;
-    ui.cvMe.setPointerCapture?.(ev.pointerId);
-    try{ audio.gestureStart?.(); }catch{}
-    game.dropX = canvasToWorldX(ev);
-  });
+function drawRock(ctx, size){
+  ctx.fillStyle = "#7f8c8d";
+  ctx.strokeStyle = "#2d3436";
+  ctx.lineWidth = Math.max(1, size * 0.18);
 
-  ui.cvMe.addEventListener("pointermove", (ev)=>{
-    if(!dragging) return;
-    game.dropX = canvasToWorldX(ev);
-  });
+  const r = size * 0.95;
+  ctx.beginPath();
+  for(let i=0;i<6;i++){
+    const ang = (Math.PI*2*i)/6;
+    const rr = r * (0.82 + (i%2)*0.12);
+    const x = Math.cos(ang)*rr;
+    const y = Math.sin(ang)*rr;
+    if(i===0) ctx.moveTo(x,y);
+    else ctx.lineTo(x,y);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
 
-  const end = (ev)=>{
-    if(!dragging) return;
-    dragging = false;
-    try{ ui.cvMe.releasePointerCapture?.(ev.pointerId); }catch{}
-    game.dropX = canvasToWorldX(ev);
-    game.drop();
+  // x_x face
+  ctx.strokeStyle = "#1f1f1f";
+  ctx.lineWidth = Math.max(1, size * 0.16);
+  const eg = size * 0.33;
+  const ey = -size * 0.05;
+  const cross = size * 0.14;
+  const drawX = (cx, cy) => {
+    ctx.beginPath();
+    ctx.moveTo(cx - cross, cy - cross);
+    ctx.lineTo(cx + cross, cy + cross);
+    ctx.moveTo(cx - cross, cy + cross);
+    ctx.lineTo(cx + cross, cy - cross);
+    ctx.stroke();
   };
-  ui.cvMe.addEventListener("pointerup", end);
-  ui.cvMe.addEventListener("pointercancel", ()=>{ dragging=false; });
+  drawX(-eg, ey);
+  drawX(eg, ey);
 
-  document.addEventListener("keydown", (e)=>{
-    if(mode==="init") return;
-    if(e.repeat) return;
-    if(e.code==="Space"){ e.preventDefault(); game.drop(); return; }
-    if(e.code==="ArrowLeft"){ game.dropX = Math.max(0, game.dropX - (game.width*0.06)); return; }
-    if(e.code==="ArrowRight"){ game.dropX = Math.min(game.width, game.dropX + (game.width*0.06)); return; }
-  });
+  ctx.beginPath();
+  ctx.moveTo(-size*0.22, size*0.32);
+  ctx.lineTo(size*0.22, size*0.32);
+  ctx.stroke();
 }
 
-function startLoop(){
-  cancelAnimationFrame(raf);
-  let last = performance.now();
-  let sendAcc = 0;
+async function enterRoom(joined){
+  roomId = joined.roomId;
+  mySlot = joined.slot;
+  pid = joined.pid;
+  hbTimer = joined.hbTimer;
 
-  const ctxNext = ui.cvNext?.getContext("2d");
-  const ctxOpp = ui.cvOpp?.getContext("2d");
+  refs = roomRefs({db, api, roomId});
 
-  const frame = (ts)=>{
-    const dt = ts - last; last = ts;
+  roomUnsub?.();
+  roomUnsub = watchRoom({ db, api, roomId, onRoom: onRoomUpdate });
 
-    meGame?.tick?.(dt);
-    meGame?.draw?.();
-
-    // next preview
-    if(ctxNext && meGame){
-      ctxNext.clearRect(0,0,ctxNext.canvas.width, ctxNext.canvas.height);
-      meGame.drawNext(ctxNext);
+  oppUnsub?.();
+  oppUnsub = subscribeOppState({ api, statesRef: refs.statesRef, pid, onOpp: ({state})=>{
+    if(ui.oppTitle){
+      const score = state?.score ?? 0;
+      ui.oppTitle.textContent = `상대 (점수 ${score})`;
     }
+    drawOpp(state);
+  }});
 
-    // opponent view
-    if(ctxOpp){
-      if(mode==="cpu" && cpuGame){
-        // show CPU as opponent
-        drawOpponent(ctxOpp, cpuGame.packState().objects);
-      }else{
-        drawOpponent(ctxOpp, oppObjects || []);
-      }
-    }
+  evUnsub?.();
+  evUnsub = subscribeEvents({ api, eventsRef: refs.eventsRef, pid, onEvent: onEventRecv });
 
-    // HUD
-    if(meGame){
-      safeSetText(ui.score, meGame.score|0);
-      safeSetText(ui.level, meGame.level|0);
-      safeSetText(ui.comboNum, (meGame._comboCount|0) || 0);
-    }
-
-    // online: publish state
-    if(mode==="online" && api && statesRef && pid && meGame){
-      sendAcc += dt;
-      if(sendAcc >= 120){
-        sendAcc = 0;
-        publishMyState({ api, statesRef, pid, state: meGame.packState() }).catch(()=>{});
-      }
-    }
-
-    raf = requestAnimationFrame(frame);
-  };
-  raf = requestAnimationFrame(frame);
+  // publish loop
+  if(publishTimer) clearInterval(publishTimer);
+  publishTimer = setInterval(()=>{
+    if(!game || mode !== "online") return;
+    publishMyState({ api, statesRef: refs.statesRef, pid, state: game.getNetState() }).catch(()=>{});
+  }, 120);
 }
 
-function stopOnlineSubs(){
-  try{ roomUnsub?.(); }catch{}
-  try{ oppUnsub?.(); }catch{}
-  try{ evUnsub?.(); }catch{}
-  roomUnsub = oppUnsub = evUnsub = null;
-}
-
-function startCpuMode(reason=""){
-  stopOnlineSubs();
-  mode = "cpu";
-  safeSetText(ui.mode, "PC");
-  safeSetText(ui.oppTag, "CPU");
-
-  meGame = new MergeGame({
-    canvas: ui.cvMe,
-    seed: ((Math.random()*2**32)>>>0),
-    onAttack: (n)=>{
-      // CPU receives rocks
-      cpuGame?.applyRocks?.(n|0);
-    }
-  });
-  cpuGame = new MergeGame({
-    canvas: document.createElement("canvas"),
-    seed: ((Math.random()*2**32)>>>0),
-    onAttack: (n)=>{
-      // player receives rocks
-      meGame?.applyRocks?.(n|0);
-    }
-  });
-  // make cpu canvas same size for rendering
-  cpuGame.cv.width = ui.cvOpp.width;
-  cpuGame.cv.height = ui.cvOpp.height;
-  cpuGame.resizeToCanvas();
-
-  cpuCtl = new CpuController(cpuGame);
-  cpuGame.tick = (dt)=>{
-    cpuCtl.update(dt);
-    MergeGame.prototype.tick.call(cpuGame, dt);
-  };
-
-  attachInput(meGame);
-  hideOverlay();
-  fit();
-  startLoop();
-}
-
-function startOnlineMode({seed}){
-  mode = "online";
-  safeSetText(ui.mode, "온라인");
-  safeSetText(ui.oppTag, "Player");
-
-  meGame = new MergeGame({
-    canvas: ui.cvMe,
-    seed: (seed>>>0) || 1,
-    onAttack: async (n)=>{
-      if(!api || !eventsRef || !pid) return;
-      const count = n|0;
-      if(count < 3) return;
-      await pushEvent({ api, eventsRef, event: { from: pid, kind: "rocks", n: count } }).catch(()=>{});
-      // local sfx
-      try{ audio.sfx?.("attackSend"); }catch{}
-    }
-  });
-
-  attachInput(meGame);
-  hideOverlay();
-  fit();
-  startLoop();
-}
-
-async function bootOnline(){
-  try{
-    const fb = initFirebase();
-    db = fb.db; api = fb.api;
-  }catch(e){
-    showOverlay("Firebase 초기화 실패", "firebase-config.js 설정(키) 확인 후 다시 시도하세요. PC 대전으로 시작할 수 있음.", {showCpuBtn:true});
-    ui.btnStartCpu.onclick = ()=>startCpuMode("firebase fail");
+function onRoomUpdate(room){
+  if(mode !== "online") return;
+  if(!room || !room.meta){
+    setStatus("방 없음(오프라인)");
     return;
   }
 
-  // lobby id from URL hash; if none, use default "public"
-  let lobbyId = (location.hash || "").replace("#","").trim();
-  if(!lobbyId) lobbyId = "public";
+  const meta = room.meta;
+  const players = room.players || {};
+  const ids = Object.keys(players);
 
-  showOverlay("온라인 연결 중…", "상대를 찾고 있어요. (안 되면 PC 대전으로 시작)", {showCpuBtn:true});
-  ui.btnStartCpu.onclick = ()=>startCpuMode("manual");
+  setStatus(ids.length >= 2 ? "연결됨" : "연결 대기…");
+  if(ui.oppTitle) ui.oppTitle.textContent = ids.length >= 2 ? "상대" : "상대 (연결 대기…)";
 
-  const j = await joinLobby({ db, api, lobbyId, name: "Player" });
-  roomId = j.roomId; pid = j.pid;
-
-  const refs = roomRefs({ db, api, roomId });
-  metaRef = refs.metaRef; playersRef = refs.playersRef; statesRef = refs.statesRef; eventsRef = refs.eventsRef;
-
-  // watch room: update opponent label
-  roomUnsub = watchRoom({ db, api, roomId, onRoom: (room)=>{
-    if(!room || !room.players) return;
-    const opp = Object.entries(room.players).find(([k])=>k!==pid);
-    if(opp){
-      const name = opp[1]?.name || "Player";
-      safeSetText(ui.oppTag, name);
-    }
-  }});
-
-  // opponent state
-  oppUnsub = subscribeOppState({ api, statesRef, pid, onOpp: ({state})=>{
-    oppObjects = state?.objects || [];
-  }});
-
-  // events
-  evUnsub = subscribeEvents({ api, eventsRef, pid, onEvent: async ({key, ev})=>{
-    if(!ev) return;
-    if(ev.kind === "rocks"){
-      const n = ev.n|0;
-      meGame?.applyRocks?.(n);
-      try{ audio.sfx?.("attackHit"); }catch{}
-    }
-    // delete processed event to avoid replay
-    try{ await api.remove(api.child(eventsRef, key)); }catch{}
-  }});
-
-  startOnlineMode({ seed: j.seed });
+  if(ids.length === 2 && meta.state === "open"){
+    setRoomState({ api, metaRef: refs.metaRef }, "playing").catch(()=>{});
+  }
 }
 
-// restart button
-ui.btnRestart?.addEventListener("click", ()=>{
-  location.reload();
+function onEventRecv({key, ev}){
+  if(!ev) return;
+  if(ev.kind === "rocks"){
+    const n = Math.max(0, Math.min(12, (ev.payload && ev.payload.n) || 0));
+    try{ game?.dropRocks?.(n); }catch{}
+  }
+
+  // consume immediately to avoid leaving logs
+  try{ api.remove(api.child(refs.eventsRef, key)).catch(()=>{}); }catch{}
+}
+
+async function bootOnline(){
+  // Wait for game first
+  if(!game) return;
+
+  // hook combo -> attack
+  game.onComboEnd = (cnt)=>{
+    if(mode !== "online" || !refs || !refs.eventsRef) return;
+    if(cnt >= 3){
+      pushEvent({ api, eventsRef: refs.eventsRef, event: { from: pid, kind: "rocks", payload: { n: cnt } } }).catch(()=>{});
+    }
+  };
+
+  try{
+    fb = initFirebase();
+    db = fb.db;
+    api = fb.api;
+  }catch(e){
+    setStatus("오프라인");
+    return;
+  }
+
+  try{
+    lobbyId = stableLobbyId();
+    // sweep old rooms/slots periodically so signals don't linger
+    try{ await sweepLobbySlots({db, api, lobbyId, maxTeams: 10}); }catch{}
+    sweepTimer = setInterval(()=>{ try{ sweepLobbySlots({db, api, lobbyId, maxTeams:10}).catch(()=>{}); }catch{} }, 20000);
+
+    mode = "online";
+    setStatus("연결 중…");
+
+    const joined = await joinLobby({ db, api, lobbyId, name: "Player", maxTeams: 10 });
+    await enterRoom(joined);
+
+    setStatus("연결 대기…");
+  }catch(e){
+    mode = "offline";
+    setStatus("오프라인");
+  }
+}
+
+// --- Cleanup: remove my nodes, then delete room if empty
+let _exitCleaned = false;
+function bestEffortExitCleanup(){
+  if(_exitCleaned) return;
+  _exitCleaned = true;
+
+  try{ if(publishTimer) clearInterval(publishTimer); }catch{}
+  try{ if(sweepTimer) clearInterval(sweepTimer); }catch{}
+  try{ if(hbTimer) clearInterval(hbTimer); }catch{}
+
+  try{ roomUnsub?.(); }catch{}
+  try{ oppUnsub?.(); }catch{}
+  try{ evUnsub?.(); }catch{}
+
+  if(mode === "online" && db && api && roomId && refs){
+    // 1) 내 노드 먼저 제거(가능하면 onDisconnect도 있지만, 즉시 정리 시도)
+    try{ if(refs.playersRef && pid) api.remove(api.child(refs.playersRef, pid)).catch(()=>{}); }catch{}
+    try{ if(refs.statesRef && pid) api.remove(api.child(refs.statesRef, pid)).catch(()=>{}); }catch{}
+
+    // 2) room cleanup은 위 remove가 반영된 뒤에 보이도록 약간 지연해서 재시도
+    //    (unload 상황에서는 await가 어려워서 best-effort로 1회 더)
+    try{
+      setTimeout(()=>{ tryCleanupRoom({ db, api, roomId }).catch(()=>{}); }, 250);
+    }catch{}
+
+    // 3) lobby slot 해제
+    try{ if(lobbyId) releaseSlot({ db, api, lobbyId, slot: mySlot }).catch(()=>{}); }catch{}
+  }
+
+  // prune lobby mm if empty
+  try{ if(db && api && lobbyId) releaseSlot({ db, api, lobbyId, slot: null }).catch(()=>{}); }catch{}
+}
+
+window.addEventListener("beforeunload", bestEffortExitCleanup);
+window.addEventListener("pagehide", bestEffortExitCleanup);
+document.addEventListener("visibilitychange", ()=>{
+  if(document.visibilityState === "hidden") bestEffortExitCleanup();
 });
 
-bootOnline();
+// If game over and user closes overlay/reloads, cleanup will run via unload.
+window.addEventListener('shapeGameReady', (e)=>{
+  game = e?.detail?.game || window.__shapeGame || null;
+  // boot online once game exists
+  bootOnline();
+});
+
+// In case event was dispatched before this module loaded
+if(window.__shapeGame){
+  game = window.__shapeGame;
+  bootOnline();
+}

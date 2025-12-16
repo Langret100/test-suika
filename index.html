@@ -1,72 +1,1344 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>수박게임</title>
-  <link rel="icon" href="data:," />
-  <link rel="stylesheet" href="./css/game.css" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>도형 합치기 게임</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Jua&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            touch-action: manipulation;
+        }
+        
+        html, body {
+            height: 100%;
+            overflow: hidden;
+        }
+        
+        body {
+            font-family: 'Jua', sans-serif;
+            background: linear-gradient(180deg, #FFEAA7 0%, #FDCB6E 50%, #F8B739 100%);
+            min-height: 100vh;
+            min-height: -webkit-fill-available;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            user-select: none;
+        
+            overscroll-behavior: none;
+            -webkit-overflow-scrolling: auto;
+}
+        
+        .game-container {
+            position: relative;
+            width: 100%;
+            max-width: 360px;
+            display: flex;
+            flex-direction: column;
+            padding: 6px;
+            height: auto;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 10px;
+            flex-shrink: 0;
+        }
+        
+        .score-section {
+            text-align: center;
+        }
+        
+        .score {
+            font-size: 32px;
+            color: #D63031;
+            text-shadow: 2px 2px 0 #fff, -1px -1px 0 #fff;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+        }
+        
+        .btn {
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            border: none;
+            background: linear-gradient(180deg, #FF7675 0%, #D63031 100%);
+            box-shadow: 0 3px 0 #C0392B, 0 5px 10px rgba(0,0,0,0.2);
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 18px;
+            color: #fff;
+            transition: transform 0.1s;
+        }
+        
+        .btn:active {
+            transform: translateY(2px);
+            box-shadow: 0 1px 0 #C0392B;
+        }
+        
+        .next-preview {
+            background: linear-gradient(180deg, #74B9FF 0%, #0984E3 100%);
+            padding: 5px 10px;
+            border-radius: 16px;
+            font-size: 10px;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            box-shadow: 0 3px 10px rgba(9,132,227,0.4);
+            font-weight: bold;
+        }
+        
+        .next-shape-container {
+            width: 24px;
+            height: 24px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .shake-btn {
+            background: linear-gradient(180deg, #FDCB6E 0%, #F39C12 100%);
+            box-shadow: 0 3px 0 #D68910, 0 5px 10px rgba(0,0,0,0.2);
+            padding: 4px 8px;
+            border-radius: 12px;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1px;
+            font-family: 'Jua', sans-serif;
+            transition: transform 0.1s;
+        }
+        
+        .shake-btn:active {
+            transform: translateY(2px);
+            box-shadow: 0 1px 0 #D68910;
+        }
+        
+        .shake-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .shake-btn .cup-icon {
+            font-size: 16px;
+        }
+        
+        .shake-btn .shake-text {
+            font-size: 8px;
+            color: #5D4037;
+            white-space: nowrap;
+        }
+        
+        .shape-progression {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 8px 6px;
+            background: rgba(255,255,255,0.85);
+            border-radius: 14px;
+            margin-bottom: 6px;
+            flex-shrink: 0;
+            gap: 2px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+            flex-wrap: nowrap;
+            overflow: hidden;
+        }
+        
+        .prog-shape {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .prog-arrow {
+            color: #E17055;
+            font-size: 10px;
+            flex-shrink: 0;
+            margin: 0 1px;
+            font-weight: bold;
+        }
+        
+        .game-area-wrapper {
+            position: relative;
+            overflow: visible;
+        }
+        
+        .drop-area {
+            height: 50px;
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .current-shape {
+            position: absolute;
+            top: 5px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 20;
+            pointer-events: none;
+            transition: left 0.05s ease-out;
+        }
+        
+        .drop-zone-touch {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            touch-action: none;
+            z-index: 10;
+        }
+        
+        .game-area {
+            position: relative;
+            background: linear-gradient(180deg, 
+                rgba(255,255,255,0.25) 0%, 
+                rgba(255,255,255,0.4) 50%,
+                rgba(255,255,255,0.55) 100%
+            );
+            border-radius: 8px 8px 50% 50% / 8px 8px 40% 40%;
+            border: 4px solid rgba(180, 160, 140, 0.6);
+            border-top: none;
+            height: 400px;
+            overflow: hidden;
+            box-shadow: 
+                inset 0 0 60px rgba(255,255,255,0.4),
+                inset -8px 0 20px rgba(255,255,255,0.3),
+                inset 8px 0 20px rgba(200,180,160,0.15),
+                0 20px 50px rgba(0,0,0,0.15);
+            backdrop-filter: blur(2px);
+        }
+        
+        .game-area::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 8px;
+            width: 25%;
+            bottom: 20px;
+            background: linear-gradient(90deg, 
+                rgba(255,255,255,0.2) 0%, 
+                transparent 100%
+            );
+            pointer-events: none;
+        }
+        
+        .game-area.shaking {
+            animation: shake 0.4s ease-in-out;
+        }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20% { transform: translateX(-8px) rotate(-1deg); }
+            40% { transform: translateX(8px) rotate(1deg); }
+            60% { transform: translateX(-6px) rotate(-0.5deg); }
+            80% { transform: translateX(6px) rotate(0.5deg); }
+        }
+        
+        .danger-line {
+            position: absolute;
+            top: 35px;
+            left: 8px;
+            right: 8px;
+            height: 2px;
+            background: repeating-linear-gradient(
+                90deg,
+                #FF6B6B 0px,
+                #FF6B6B 6px,
+                transparent 6px,
+                transparent 12px
+            );
+            opacity: 0.6;
+            border-radius: 1px;
+            z-index: 5;
+        }
+        
+        #game-canvas {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .game-over-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.75);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            z-index: 100;
+            border-radius: 8px 8px 50% 50% / 8px 8px 40% 40%;
+        }
+        
+        .game-over-overlay.show {
+            display: flex;
+        }
+        
+        .game-over-text {
+            font-size: 32px;
+            color: #FFEAA7;
+            text-shadow: 3px 3px 0 #D63031;
+            margin-bottom: 12px;
+            animation: bounce 0.5s ease infinite alternate;
+        }
+        
+        @keyframes bounce {
+            from { transform: translateY(0); }
+            to { transform: translateY(-8px); }
+        }
+        
+        .restart-btn {
+            padding: 12px 35px;
+            font-size: 18px;
+            font-family: 'Jua', sans-serif;
+            background: linear-gradient(180deg, #00B894 0%, #00A085 100%);
+            border: none;
+            border-radius: 25px;
+            color: #fff;
+            cursor: pointer;
+            box-shadow: 0 4px 0 #00806B, 0 6px 15px rgba(0,0,0,0.3);
+            transition: transform 0.1s;
+        }
+        
+        .restart-btn:active {
+            transform: translateY(3px);
+            box-shadow: 0 1px 0 #00806B;
+        }
+        
+        .combo-text {
+            position: absolute;
+            font-size: 26px;
+            color: #E17055;
+            text-shadow: 2px 2px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff;
+            pointer-events: none;
+            animation: comboFloat 1.2s ease-out forwards;
+            z-index: 200;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+        
+        @keyframes comboFloat {
+            0% { opacity: 1; transform: translateY(0) scale(1); }
+            50% { transform: translateY(-40px) scale(1.3); }
+            100% { opacity: 0; transform: translateY(-80px) scale(1); }
+        }
+        
+        .combo-burst {
+            position: absolute;
+            pointer-events: none;
+            z-index: 150;
+            animation: burstAnim 0.5s ease-out forwards;
+        }
+        
+        @keyframes burstAnim {
+            0% { transform: scale(0); opacity: 1; }
+            100% { transform: scale(2); opacity: 0; }
+        }
+        
+        .overflow-warning {
+            position: absolute;
+            top: 45px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 0, 0, 0.85);
+            color: white;
+            padding: 5px 15px;
+            border-radius: 15px;
+            font-size: 14px;
+            z-index: 60;
+            display: none;
+            animation: pulse 0.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .music-btn {
+            background: linear-gradient(180deg, #A29BFE 0%, #6C5CE7 100%) !important;
+            box-shadow: 0 3px 0 #5B4ACF, 0 5px 10px rgba(0,0,0,0.2) !important;
+        }
+        
+        .music-btn:active {
+            box-shadow: 0 1px 0 #5B4ACF !important;
+        }
+        
+        .game-container:fullscreen,
+        .game-container:-webkit-full-screen {
+            max-width: 400px;
+            padding: 10px;
+            background: linear-gradient(180deg, #FFEAA7 0%, #FDCB6E 50%, #F8B739 100%);
+            justify-content: center;
+        }
+        
+        .game-container:fullscreen .game-area,
+        .game-container:-webkit-full-screen .game-area {
+            height: 470px;
+        }
+    
+        /* --- Online (Firebase) UI --- */
+        .net-pill{
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+            background: rgba(255,255,255,0.85);
+            color: #5D4037;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+            font-weight: bold;
+            white-space: nowrap;
+        }
+        .net-btn{
+            width: auto;
+            padding: 0 10px;
+            font-size: 12px;
+        }
+        .opp-panel{
+            position: absolute;
+            right: 10px;
+            top: 10px;
+            width: 128px;
+            padding: 6px;
+            border-radius: 14px;
+            background: rgba(255,255,255,0.88);
+            box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+            pointer-events: none;
+        }
+        .opp-title{
+            font-size: 10px;
+            color: #5D4037;
+            font-weight: bold;
+            margin-bottom: 4px;
+            text-align: left;
+        }
+        #opp-canvas{
+            width: 100%;
+            height: 170px;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.35);
+        }
+
+    </style>
 </head>
 <body>
-  <div class="wrap">
-    <!-- 상단 타이틀/연결바 제거: 게임 화면만 -->
-
-    <section class="panel gamePanel" id="game">
-      <div class="hud" id="hud">
-        <div class="hudLeft">
-          <div>점수: <b id="score">0</b></div>
-          <div>레벨: <b id="level">1</b></div>
-          <div>모드: <b id="mode">-</b></div>
-        </div>
-        <div class="hudRight">
-          <button class="iconBtn" id="btnSound" aria-label="소리">🔊</button>
-          <button class="iconBtn matchBtn" id="btnMatch" aria-label="매칭">매칭</button>
-          <button class="iconBtn" id="btnFull" aria-label="전체화면">⛶</button>
-        </div>
-      </div>
-
-      <div class="playShell" id="playShell">
-        <!-- 내 게임 화면: 좌측에 딱 붙음 -->
-        <div class="cardBox boardCard" id="boardCol" aria-label="me">
-          <canvas id="cvMe" width="360" height="720"></canvas>
-        </div>
-
-        <!-- 남는 공간: 상단 NEXT, 아래 상대 화면(보드만) -->
-        <div class="sideCol" id="sideCol" aria-label="side">
-          <div class="cardBox nextCard" id="nextCard" aria-label="next">
-            <div class="cardTag">NEXT</div>
-            <canvas id="cvNext" width="120" height="120"></canvas>
-          </div>
-          <div class="cardBox oppCard" id="oppCard" aria-label="opponent">
-            <!-- 요청: 라벨은 카드 내부 좌측 상단 (NEXT와 동일한 스타일) -->
-            <div class="cardTag" id="oppTag">Player</div>
-            <canvas id="cvOpp" width="120" height="240"></canvas>
-          </div>
-          <!-- 콤보: 카드(네모칸) 없이 빈 공간에 텍스트만 표시 -->
-          <div class="comboArea" id="comboArea" aria-label="combo">
-            <div class="comboNum" id="comboNum">0</div>
-            <div class="comboTxt">Combo!</div>
-          </div>
-        </div>
-
-        <!-- 오버레이(대기/결과) -->
-        <div class="overlay hidden" id="overlay">
-          <div class="overlayCard">
-            <div class="big" id="overlayTitle">대기…</div>
-            <div class="small" id="overlayDesc"></div>
-            <div class="row" id="overlayBtns">
-              <button class="btn" id="btnStartCpu">PC와 시작</button>
-              <button class="btn ghost" id="btnRestart">다시 만들기</button>
+    <div class="game-container" id="game-container">
+        <div class="header">
+            <div class="score-section">
+                <div class="score" id="score">0</div>
             </div>
-          </div>
+            <div class="controls">
+                <div class="next-preview">
+                    <span>NEXT</span>
+                    <div class="next-shape-container" id="next-shape"></div>
+                </div>
+
+                <button class="btn net-btn" id="match-btn" title="온라인 매칭">매칭</button>
+                <div class="net-pill" id="net-status">오프라인</div>
+                <button class="shake-btn" id="shake-btn" title="흔들기">
+                    <span class="cup-icon">🥤</span>
+                    <span class="shake-text">흔들기 <span id="shake-count">X2</span></span>
+                </button>
+                <button class="btn music-btn" id="music-btn" title="음악">🎶</button>
+                <button class="btn" id="fullscreen-btn" title="전체화면">⛶</button>
+            </div>
         </div>
-      </div>
-    </section>
+        
+        <div class="shape-progression" id="shape-progression"></div>
+        
+        <div class="game-area-wrapper">
+            <div class="drop-area" id="drop-area">
+                <div class="drop-zone-touch" id="drop-zone"></div>
+                <div class="current-shape" id="current-shape"></div>
+            </div>
+            
+            <div class="game-area" id="game-area">
+                <div class="danger-line"></div>
+                <div class="overflow-warning" id="overflow-warning">⚠️ 넘친다!</div>
+                <canvas id="game-canvas"></canvas>
+                
+                <div class="opp-panel" id="opp-panel">
+                    <div class="opp-title" id="opp-title">상대 (연결 대기…)</div>
+                    <canvas id="opp-canvas" width="120" height="170"></canvas>
+                </div>
 
-    <div id="log" class="hidden"></div>
-  </div>
+                <div class="game-over-overlay" id="game-over">
+                    <div class="game-over-text">게임 오버!</div>
+                    <div style="color: #fff; font-size: 22px; margin-bottom: 12px;">
+                        점수: <span id="final-score">0</span>
+                    </div>
+                    <button class="restart-btn" id="restart-btn">다시 하기</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
-  <script type="module" src="./js/main.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <script>
+        const SHAPES = [
+            { name: '작은원', type: 'circle', color: '#FF6B6B', size: 14 },
+            { name: '삼각형', type: 'triangle', color: '#FECA57', size: 22 },
+            { name: '이등변삼각형', type: 'isoceles', color: '#48DBFB', size: 31 },
+            { name: '사각형', type: 'square', color: '#1DD1A1', size: 41 },
+            { name: '직사각형', type: 'rectangle', color: '#5F27CD', size: 53 },
+            { name: '마름모', type: 'diamond', color: '#FF9FF3', size: 67 },
+            { name: '오각형', type: 'pentagon', color: '#54A0FF', size: 84 },
+            { name: '육각형', type: 'hexagon', color: '#00D2D3', size: 103 },
+            { name: '큰원', type: 'bigcircle', color: '#FF9F43', size: 105 }
+        ];
+
+        const EXPRESSIONS = {
+            NORMAL: 'normal',
+            HAPPY: 'happy',
+            SURPRISED: 'surprised',
+            WORRIED: 'worried',
+            EXCITED: 'excited'
+        };
+
+        class SoundSystem {
+            constructor() {
+                this.audioContext = null;
+                this.initialized = false;
+                this.musicPlaying = false;
+                this.musicInterval = null;
+                this.musicGain = null;
+            }
+
+            init() {
+                if (this.initialized) return true;
+                try {
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    this.musicGain = this.audioContext.createGain();
+                    this.musicGain.connect(this.audioContext.destination);
+                    this.musicGain.gain.value = 0.12;
+                    this.initialized = true;
+                    return true;
+                } catch(e) { return false; }
+            }
+
+            resume() {
+                if (this.audioContext && this.audioContext.state === 'suspended') this.audioContext.resume();
+            }
+
+            playTone(freq, dur, type = 'sine', vol = 0.3, dest = null) {
+                if (!this.audioContext || !this.initialized) return;
+                try {
+                    this.resume();
+                    const osc = this.audioContext.createOscillator();
+                    const gain = this.audioContext.createGain();
+                    osc.connect(gain);
+                    gain.connect(dest || this.audioContext.destination);
+                    osc.frequency.value = freq;
+                    osc.type = type;
+                    const now = this.audioContext.currentTime;
+                    gain.gain.setValueAtTime(vol, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + dur);
+                    osc.start(now);
+                    osc.stop(now + dur);
+                } catch(e) {}
+            }
+
+            startMusic() {
+                if (!this.initialized || this.musicPlaying) return;
+                this.resume();
+                this.musicPlaying = true;
+                const melody = [523, 587, 659, 587, 523, 659, 587, 523, 659, 698, 784, 698, 659, 587, 523, 587];
+                let i = 0;
+                const play = () => {
+                    if (!this.musicPlaying) return;
+                    this.playTone(melody[i], 0.25, 'sine', 0.1, this.musicGain);
+                    if (i % 4 === 0) this.playTone(melody[i] * 1.25, 0.25, 'triangle', 0.05, this.musicGain);
+                    i = (i + 1) % melody.length;
+                };
+                play();
+                this.musicInterval = setInterval(play, 280);
+            }
+
+            stopMusic() { this.musicPlaying = false; if (this.musicInterval) { clearInterval(this.musicInterval); this.musicInterval = null; } }
+            toggleMusic() { if (this.musicPlaying) { this.stopMusic(); return false; } else { this.startMusic(); return true; } }
+            playDrop() { this.playTone(880, 0.08, 'sine', 0.2); setTimeout(() => this.playTone(660, 0.06, 'sine', 0.15), 40); }
+            playLand() { this.playTone(180, 0.1, 'sine', 0.2); setTimeout(() => this.playTone(120, 0.12, 'triangle', 0.12), 40); }
+            playMerge(lvl) { const f = 400 + lvl * 80; this.playTone(f, 0.1, 'sine', 0.25); setTimeout(() => this.playTone(f * 1.25, 0.1, 'sine', 0.2), 50); setTimeout(() => this.playTone(f * 1.5, 0.12, 'sine', 0.15), 100); }
+            playCombo(cnt) { const f = 500 + cnt * 100; for (let i = 0; i < 3; i++) setTimeout(() => this.playTone(f + i * 150, 0.08, 'square', 0.1), i * 40); }
+            playShake() { for (let i = 0; i < 5; i++) setTimeout(() => this.playTone(200 + Math.random() * 100, 0.05, 'triangle', 0.15), i * 60); }
+            playGameOver() { this.stopMusic(); [400, 350, 300, 200].forEach((f, i) => setTimeout(() => this.playTone(f, 0.25, 'sawtooth', 0.15), i * 120)); }
+        }
+
+        class ShapeGame {
+            constructor() {
+                this.canvas = document.getElementById('game-canvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.gameArea = document.getElementById('game-area');
+                this.wrapper = document.querySelector('.game-area-wrapper');
+                this.sound = new SoundSystem();
+                
+                this.score = 0;
+                this.currentShapeIndex = 0;
+                this.nextShapeIndex = 0;
+                this.isGameOver = false;
+                this.canDrop = true;
+                this.dropX = 0;
+                this.bodies = [];
+                this.blinkTimers = new Map();
+                this.expressionTimers = new Map();
+                this.comboCount = 0;
+                this.lastMergeTime = 0;
+                this.shakeRemaining = 2;
+                this.soundInitialized = false;
+                this.musicEnabled = true; // 기본: 음악 ON (음악 버튼을 누르지 않아도 자동 재생)
+                this.mergingPairs = new Set();
+                // Online hooks
+                this.onComboEnd = null;
+                this.onGameOver = null;
+                this.onRestart = null;
+                this._comboSeq = 0;
+                
+                this.init();
+            }
+
+            init() {
+                this.setupCanvas();
+                this.setupPhysics();
+                this.setupEvents();
+                this.createShapeProgression();
+                this.generateNextShape();
+                this.generateNextShape();
+                this.updateUI();
+                this.updateShakeButton();
+                this.gameLoop();
+            }
+
+            initSoundOnInteraction() {
+                if (!this.soundInitialized) {
+                    this.soundInitialized = this.sound.init();
+                }
+                this.sound.resume();
+
+                // 기본은 음악 ON: 음악 버튼을 누르지 않아도 첫 상호작용(터치/클릭) 시 자동 재생
+                if (this.musicEnabled && !this.isGameOver && !this.sound.musicPlaying) {
+                    this.sound.startMusic();
+                }
+
+                const musicBtn = document.getElementById('music-btn');
+                if (musicBtn) musicBtn.textContent = (this.musicEnabled && this.sound.musicPlaying) ? '🎶' : '🎵';
+            }
+
+            setupCanvas() {
+                const rect = this.gameArea.getBoundingClientRect();
+                this.canvas.width = rect.width;
+                this.canvas.height = rect.height;
+                this.width = rect.width;
+                this.height = rect.height;
+                this.dropX = this.width / 2;
+                this.updateDangerLine();
+            }
+
+            updateDangerLine() {
+                const line = this.gameArea ? this.gameArea.querySelector('.danger-line') : null;
+                // canvas 좌표계(픽셀) 기준 위험선 Y 위치를 DOM에서 가져옴
+                this.dangerY = line ? (line.offsetTop + (line.offsetHeight || 0) / 2) : 40;
+            }
+
+            createShapeProgression() {
+                const container = document.getElementById('shape-progression');
+                container.innerHTML = '';
+                SHAPES.forEach((shape, i) => {
+                    const div = document.createElement('div');
+                    div.className = 'prog-shape';
+                    div.innerHTML = this.createProgressionShapeSVG(i, 18);
+                    container.appendChild(div);
+                    if (i < SHAPES.length - 1) {
+                        const arrow = document.createElement('span');
+                        arrow.className = 'prog-arrow';
+                        arrow.textContent = '›';
+                        container.appendChild(arrow);
+                    }
+                });
+            }
+
+            createProgressionShapeSVG(index, size) {
+                const shape = SHAPES[index];
+                const vs = size * 1.3, cx = vs/2, cy = vs/2, r = size * 0.48;
+                const es = 1.3, eg = size * 0.12;
+                return `<svg width="${vs}" height="${vs}" viewBox="0 0 ${vs} ${vs}">
+                    <path d="${this.getShapePath(shape.type, cx, cy, r)}" fill="${shape.color}" stroke="${this.darkenColor(shape.color, 15)}" stroke-width="1.2"/>
+                    <circle cx="${cx - eg}" cy="${cy}" r="${es}" fill="#2C1810"/>
+                    <circle cx="${cx + eg}" cy="${cy}" r="${es}" fill="#2C1810"/>
+                </svg>`;
+            }
+
+            getShapePath(type, cx, cy, r) {
+                switch(type) {
+                    case 'circle': case 'bigcircle':
+                        return `M ${cx} ${cy-r} A ${r} ${r} 0 1 1 ${cx} ${cy+r} A ${r} ${r} 0 1 1 ${cx} ${cy-r}`;
+                    case 'triangle':
+                        return [0,1,2].map(i => { const a=(i*120-90)*Math.PI/180; return `${i===0?'M':'L'} ${cx+r*Math.cos(a)},${cy+r*Math.sin(a)}`; }).join(' ')+'Z';
+                    case 'isoceles':
+                        return `M ${cx} ${cy-r*1.3} L ${cx+r*0.7} ${cy+r*0.7} L ${cx-r*0.7} ${cy+r*0.7} Z`;
+                    case 'square':
+                        return `M ${cx-r*0.8} ${cy-r*0.8} L ${cx+r*0.8} ${cy-r*0.8} L ${cx+r*0.8} ${cy+r*0.8} L ${cx-r*0.8} ${cy+r*0.8} Z`;
+                    case 'rectangle':
+                        return `M ${cx-r*1.1} ${cy-r*0.6} L ${cx+r*1.1} ${cy-r*0.6} L ${cx+r*1.1} ${cy+r*0.6} L ${cx-r*1.1} ${cy+r*0.6} Z`;
+                    case 'diamond':
+                        return `M ${cx} ${cy-r} L ${cx+r*0.75} ${cy} L ${cx} ${cy+r} L ${cx-r*0.75} ${cy} Z`;
+                    case 'pentagon':
+                        return [0,1,2,3,4].map(i => { const a=(i*72-90)*Math.PI/180; return `${i===0?'M':'L'} ${cx+r*Math.cos(a)},${cy+r*Math.sin(a)}`; }).join(' ')+'Z';
+                    case 'hexagon':
+                        return [0,1,2,3,4,5].map(i => { const a=(i*60-90)*Math.PI/180; return `${i===0?'M':'L'} ${cx+r*Math.cos(a)},${cy+r*Math.sin(a)}`; }).join(' ')+'Z';
+                }
+                return '';
+            }
+
+            setupPhysics() {
+                this.engine = Matter.Engine.create({ positionIterations: 10, velocityIterations: 10 });
+                this.world = this.engine.world;
+                this.engine.world.gravity.y = 1.0;
+
+                const wallOpts = { isStatic: true, friction: 0.8, restitution: 0.1, label: 'wall' };
+                
+                // 곡선 바닥 - 화면 끝까지 내림
+                const bottomY = this.height + 10;  // 화면 끝 아래로
+                const curveTopY = this.height * 0.6;  // 곡선 시작점
+                const curveDepth = bottomY - curveTopY;
+                
+                const centerX = this.width / 2;
+                const radiusX = this.width / 2 - 8;
+                const radiusY = curveDepth;
+                
+                // U자형 곡선 바닥
+                const segments = 24;
+                for (let i = 0; i < segments; i++) {
+                    const angle1 = Math.PI - (i / segments) * Math.PI;
+                    const angle2 = Math.PI - ((i + 1) / segments) * Math.PI;
+                    
+                    const x1 = centerX + radiusX * Math.cos(angle1);
+                    const y1 = curveTopY + radiusY * Math.sin(angle1);
+                    const x2 = centerX + radiusX * Math.cos(angle2);
+                    const y2 = curveTopY + radiusY * Math.sin(angle2);
+                    
+                    const midX = (x1 + x2) / 2;
+                    const midY = (y1 + y2) / 2;
+                    const angle = Math.atan2(y2 - y1, x2 - x1);
+                    const len = Math.sqrt((x2-x1)**2 + (y2-y1)**2) + 4;
+                    
+                    Matter.Composite.add(this.world, Matter.Bodies.rectangle(
+                        midX, midY, len, 20,
+                        { ...wallOpts, angle: angle, label: 'floor' }
+                    ));
+                }
+                
+                // 좌우 벽
+                Matter.Composite.add(this.world, Matter.Bodies.rectangle(
+                    -12, curveTopY / 2, 30, curveTopY + 20, wallOpts
+                ));
+                Matter.Composite.add(this.world, Matter.Bodies.rectangle(
+                    this.width + 12, curveTopY / 2, 30, curveTopY + 20, wallOpts
+                ));
+
+                Matter.Events.on(this.engine, 'collisionStart', (e) => {
+                    e.pairs.forEach(pair => this.handleCollision(pair.bodyA, pair.bodyB));
+                });
+            }
+
+            setupEvents() {
+                const dropZone = document.getElementById('drop-zone');
+                const handleStart = (e) => { if (e.cancelable) e.preventDefault(); this.initSoundOnInteraction(); const t = e.touches ? e.touches[0] : e; this.updateDropPosition(t.clientX); };
+                
+                dropZone.addEventListener('touchstart', handleStart, { passive: false });
+                dropZone.addEventListener('touchmove', (e) => { if (e.cancelable) e.preventDefault(); this.updateDropPosition(e.touches[0].clientX); }, { passive: false });
+                dropZone.addEventListener('touchend', (e) => { if (e.cancelable) e.preventDefault(); this.dropShape(); }, { passive: false });
+                dropZone.addEventListener('mousedown', handleStart);
+                dropZone.addEventListener('mousemove', (e) => { if (e.buttons === 1) this.updateDropPosition(e.clientX); });
+                dropZone.addEventListener('click', (e) => { this.initSoundOnInteraction(); this.updateDropPosition(e.clientX); this.dropShape(); });
+
+                document.getElementById('fullscreen-btn').addEventListener('click', () => { this.initSoundOnInteraction(); this.toggleFullscreen(); });
+                document.getElementById('music-btn').addEventListener('click', () => {
+                    this.initSoundOnInteraction();
+                    const playing = this.sound.toggleMusic();
+                    this.musicEnabled = playing;
+                    document.getElementById('music-btn').textContent = playing ? '🎶' : '🎵';
+                });
+                document.getElementById('shake-btn').addEventListener('click', () => { this.initSoundOnInteraction(); this.shakeContainer(); });
+                document.getElementById('restart-btn').addEventListener('click', () => { this.initSoundOnInteraction(); this.restart(); });
+
+                window.addEventListener('resize', () => setTimeout(() => this.setupCanvas(), 100));
+                document.addEventListener('fullscreenchange', () => setTimeout(() => this.setupCanvas(), 100));
+            }
+
+            shakeContainer() {
+                if (this.shakeRemaining <= 0 || this.isGameOver) return;
+                this.shakeRemaining--;
+                this.updateShakeButton();
+                this.sound.playShake();
+                this.gameArea.classList.add('shaking');
+                setTimeout(() => this.gameArea.classList.remove('shaking'), 400);
+                this.bodies.forEach(s => {
+                    Matter.Body.applyForce(s.body, s.body.position, { x: (Math.random()-0.5)*0.04, y: -0.02-Math.random()*0.02 });
+                    this.setExpression(s.id, EXPRESSIONS.SURPRISED, 800);
+                });
+            }
+
+            updateShakeButton() {
+                document.getElementById('shake-count').textContent = `X${this.shakeRemaining}`;
+                document.getElementById('shake-btn').disabled = this.shakeRemaining <= 0;
+            }
+
+            toggleFullscreen() {
+                const c = document.getElementById('game-container');
+                if (!document.fullscreenElement) (c.requestFullscreen || c.webkitRequestFullscreen || c.msRequestFullscreen).call(c);
+                else (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+            }
+
+            updateDropPosition(clientX) {
+                const rect = document.getElementById('drop-area').getBoundingClientRect();
+                const size = SHAPES[this.currentShapeIndex].size;
+                this.dropX = Math.max(size + 10, Math.min(this.width - size - 10, clientX - rect.left));
+                document.getElementById('current-shape').style.left = this.dropX + 'px';
+            }
+
+            generateNextShape() {
+                this.currentShapeIndex = this.nextShapeIndex;
+                // 같은 도형이 2연속으로 나오지 않도록 다음 도형 선택(기본 풀: 0~3)
+                const baseCount = Math.min(4, SHAPES.length);
+                let idx = Math.floor(Math.random() * baseCount);
+                if (baseCount > 1) {
+                    while (idx === this.currentShapeIndex) {
+                        idx = Math.floor(Math.random() * baseCount);
+                    }
+                }
+                this.nextShapeIndex = idx;
+                this.updatePreview();
+            }
+
+            updatePreview() {
+                document.getElementById('current-shape').innerHTML = this.createShapeSVG(this.currentShapeIndex, SHAPES[this.currentShapeIndex].size);
+                document.getElementById('current-shape').style.left = this.dropX + 'px';
+                document.getElementById('next-shape').innerHTML = this.createShapeSVG(this.nextShapeIndex, 14);
+            }
+
+            createShapeSVG(index, size) {
+                const shape = SHAPES[index];
+                const vs = size*2.4, cx = vs/2, cy = vs/2, r = size;
+                const es = Math.max(1.5, size*0.1), eg = size*0.28, ey = cy - size*0.05;
+                const my = cy + size*0.25, mw = size*0.25;
+                const uid = Math.random().toString(36).substr(2,6);
+                return `<svg width="${vs}" height="${vs}" viewBox="0 0 ${vs} ${vs}">
+                    <defs><linearGradient id="g${uid}" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style="stop-color:${this.lightenColor(shape.color,15)}"/>
+                        <stop offset="100%" style="stop-color:${this.darkenColor(shape.color,15)}"/>
+                    </linearGradient></defs>
+                    <path d="${this.getShapePath(shape.type, cx, cy, r)}" fill="url(#g${uid})" stroke="${this.darkenColor(shape.color,15)}" stroke-width="2"/>
+                    <ellipse cx="${cx-eg}" cy="${ey}" rx="${es}" ry="${es*1.3}" fill="#2C1810"/>
+                    <ellipse cx="${cx-eg-es*0.25}" cy="${ey-es*0.35}" rx="${es*0.35}" ry="${es*0.4}" fill="#fff"/>
+                    <ellipse cx="${cx+eg}" cy="${ey}" rx="${es}" ry="${es*1.3}" fill="#2C1810"/>
+                    <ellipse cx="${cx+eg-es*0.25}" cy="${ey-es*0.35}" rx="${es*0.35}" ry="${es*0.4}" fill="#fff"/>
+                    <path d="M ${cx-mw/2} ${my} Q ${cx} ${my+mw*0.5} ${cx+mw/2} ${my}" fill="none" stroke="#8B4513" stroke-width="${Math.max(1.2,size*0.05)}" stroke-linecap="round"/>
+                </svg>`;
+            }
+
+            darkenColor(c, p) { const n = parseInt(c.replace('#',''),16), a = Math.round(2.55*p); return `#${(1<<24|Math.max(0,(n>>16)-a)<<16|Math.max(0,((n>>8)&0xFF)-a)<<8|Math.max(0,(n&0xFF)-a)).toString(16).slice(1)}`; }
+            lightenColor(c, p) { const n = parseInt(c.replace('#',''),16), a = Math.round(2.55*p); return `#${(1<<24|Math.min(255,(n>>16)+a)<<16|Math.min(255,((n>>8)&0xFF)+a)<<8|Math.min(255,(n&0xFF)+a)).toString(16).slice(1)}`; }
+
+            setExpression(id, expr, dur) { this.expressionTimers.set(id, { type: expr, until: Date.now() + dur }); }
+
+            triggerNearbyReactions(x, y, excludeId) {
+                this.bodies.forEach(s => {
+                    if (s.id === excludeId) return;
+                    const dx = s.body.position.x - x, dy = s.body.position.y - y;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist < 80) {
+                        if (dy > 0 && Math.abs(dx) < 40) this.setExpression(s.id, EXPRESSIONS.WORRIED, 1000);
+                        else if (dist < 60) this.setExpression(s.id, Math.random() > 0.5 ? EXPRESSIONS.HAPPY : EXPRESSIONS.EXCITED, 800);
+                    }
+                });
+            }
+
+            dropShape() {
+                if (!this.canDrop || this.isGameOver) return;
+                this.canDrop = false;
+                this.sound.playDrop();
+                const body = this.createPhysicsBody(this.dropX, 50, this.currentShapeIndex);
+                this.bodies.push({ body, shapeIndex: this.currentShapeIndex, id: body.id, hasLanded: false });
+                Matter.Composite.add(this.world, body);
+                this.triggerNearbyReactions(this.dropX, 150, body.id);
+                this.generateNextShape();
+                setTimeout(() => this.canDrop = true, 400);
+            }
+
+            createPhysicsBody(x, y, shapeIndex) {
+                const shape = SHAPES[shapeIndex];
+                const size = shape.size;
+                const opts = { friction: 0.6, frictionStatic: 0.8, restitution: 0.12, density: 0.0012, label: `shape_${shapeIndex}`, slop: 0.01 };
+
+                let body;
+                switch(shape.type) {
+                    case 'circle': case 'bigcircle': body = Matter.Bodies.circle(x, y, size, opts); break;
+                    case 'triangle': body = Matter.Bodies.polygon(x, y, 3, size, opts); break;
+                    case 'isoceles': body = Matter.Bodies.fromVertices(x, y, [[{x:0,y:-size*1.3},{x:size*0.7,y:size*0.7},{x:-size*0.7,y:size*0.7}]], opts); break;
+                    case 'square': body = Matter.Bodies.rectangle(x, y, size*1.6, size*1.6, opts); break;
+                    case 'rectangle': body = Matter.Bodies.rectangle(x, y, size*2.2, size*1.2, opts); break;
+                    case 'diamond': body = Matter.Bodies.fromVertices(x, y, [[{x:0,y:-size},{x:size*0.75,y:0},{x:0,y:size},{x:-size*0.75,y:0}]], opts); break;
+                    case 'pentagon': body = Matter.Bodies.polygon(x, y, 5, size, opts); break;
+                    case 'hexagon': body = Matter.Bodies.polygon(x, y, 6, size, opts); break;
+                    default: body = Matter.Bodies.circle(x, y, size, opts);
+                }
+                return body || Matter.Bodies.circle(x, y, size, opts);
+            }
+
+            createRockBody(x, y) {
+                const size = SHAPES[0].size; // 1단계 원 크기
+                const opts = { friction: 0.9, frictionStatic: 1.0, restitution: 0.05, density: 0.002, label: 'rock', slop: 0.02 };
+                // 각진 짱돌(불규칙 다각형)
+                const verts = [];
+                const sides = 6;
+                for (let i = 0; i < sides; i++) {
+                    const a = (Math.PI * 2 * i) / sides;
+                    const rr = size * (0.75 + Math.random() * 0.35);
+                    verts.push({ x: Math.cos(a) * rr, y: Math.sin(a) * rr });
+                }
+                return Matter.Bodies.fromVertices(x, y, [verts], opts, true);
+            }
+
+            dropRocks(n=1) {
+                if (this.isGameOver) return;
+                const size = SHAPES[0].size;
+                for (let i = 0; i < n; i++) {
+                    const x = Math.max(size + 10, Math.min(this.width - size - 10, 10 + Math.random() * (this.width - 20)));
+                    const rock = this.createRockBody(x, 30);
+                    this.bodies.push({ body: rock, shapeIndex: 0, id: rock.id, hasLanded: false, isRock: true });
+                    Matter.Composite.add(this.world, rock);
+                }
+            }
+
+            removeRocksNear(x, y, radius=90) {
+                const toRemove = [];
+                for (const s of this.bodies) {
+                    if (!s.isRock) continue;
+                    const dx = s.body.position.x - x;
+                    const dy = s.body.position.y - y;
+                    if (Math.sqrt(dx*dx + dy*dy) <= radius) toRemove.push(s);
+                }
+                if (toRemove.length === 0) return;
+                for (const s of toRemove) {
+                    try { Matter.Composite.remove(this.world, s.body); } catch(e) {}
+                    this.expressionTimers.delete(s.id);
+                }
+                const ids = new Set(toRemove.map(s => s.id));
+                this.bodies = this.bodies.filter(s => !ids.has(s.id));
+            }
+
+            getNetState() {
+                return {
+                    w: this.width,
+                    h: this.height,
+                    score: this.score,
+                    over: this.isGameOver ? 1 : 0,
+                    bodies: this.bodies.map(s => ({
+                        x: Math.round(s.body.position.x * 10) / 10,
+                        y: Math.round(s.body.position.y * 10) / 10,
+                        a: Math.round(s.body.angle * 1000) / 1000,
+                        i: s.shapeIndex,
+                        r: s.isRock ? 1 : 0
+                    }))
+                };
+            }
+
+            handleCollision(bodyA, bodyB) {
+                const isFloorA = bodyA.label === 'floor', isFloorB = bodyB.label === 'floor';
+                
+                if (isFloorA || isFloorB) {
+                    const shapeBody = isFloorA ? bodyB : bodyA;
+                    const shapeData = this.bodies.find(s => s.body.id === shapeBody.id);
+                    if (shapeData && !shapeData.hasLanded) {
+                        shapeData.hasLanded = true;
+                        this.sound.playLand();
+                        this.setExpression(shapeData.id, EXPRESSIONS.SURPRISED, 300);
+                    }
+                    return;
+                }
+                
+                if (bodyA.isStatic || bodyB.isStatic) return;
+
+                const shapeA = this.bodies.find(s => s.body.id === bodyA.id);
+                const shapeB = this.bodies.find(s => s.body.id === bodyB.id);
+                if (!shapeA || !shapeB) return;
+
+                // 짱돌은 합체/점수 없음 (공간만 차지)
+                if (shapeA.isRock || shapeB.isRock) {
+                    shapeA.hasLanded = true;
+                    shapeB.hasLanded = true;
+                    return;
+                }
+                
+                // 다른 도형과 부딪히면 '쌓임'으로 간주(바닥 접촉만으로는 상단 도형이 체크에서 빠짐)
+                shapeA.hasLanded = true;
+                shapeB.hasLanded = true;
+
+                if (shapeA.shapeIndex !== shapeB.shapeIndex) {
+                    if (Math.abs(bodyA.velocity.y) > 1 || Math.abs(bodyB.velocity.y) > 1) {
+                        const top = bodyA.position.y < bodyB.position.y ? shapeA : shapeB;
+                        const bottom = bodyA.position.y < bodyB.position.y ? shapeB : shapeA;
+                        this.setExpression(top.id, EXPRESSIONS.WORRIED, 500);
+                        this.setExpression(bottom.id, EXPRESSIONS.SURPRISED, 500);
+                    }
+                    return;
+                }
+                
+                if (shapeA.shapeIndex >= SHAPES.length - 1) return;
+
+                const pairKey = [bodyA.id, bodyB.id].sort().join('-');
+                if (this.mergingPairs.has(pairKey)) return;
+                this.mergingPairs.add(pairKey);
+
+                const now = Date.now();
+                if (now - this.lastMergeTime < 600) this.comboCount++;
+                else this.comboCount = 1;
+                this.lastMergeTime = now;
+
+                // 콤보가 끊기는 시점에 최종 콤보 수를 알림(온라인 공격용)
+                const seq = ++this._comboSeq;
+                setTimeout(() => {
+                    if (this._comboSeq !== seq) return;
+                    try { this.onComboEnd && this.onComboEnd(this.comboCount); } catch(e) {}
+                }, 650);
+
+                const newIndex = shapeA.shapeIndex + 1;
+                const midX = (bodyA.position.x + bodyB.position.x) / 2;
+                const midY = (bodyA.position.y + bodyB.position.y) / 2;
+
+                Matter.Composite.remove(this.world, bodyA);
+                Matter.Composite.remove(this.world, bodyB);
+                this.bodies = this.bodies.filter(s => s.body.id !== bodyA.id && s.body.id !== bodyB.id);
+                this.expressionTimers.delete(bodyA.id);
+                this.expressionTimers.delete(bodyB.id);
+
+                const newBody = this.createPhysicsBody(midX, midY, newIndex);
+                this.bodies.push({ body: newBody, shapeIndex: newIndex, id: newBody.id, hasLanded: true });
+                Matter.Composite.add(this.world, newBody);
+
+                const points = (newIndex + 1) * 10 * (this.comboCount > 1 ? this.comboCount : 1);
+                this.score += points;
+                this.updateUI();
+                
+                this.sound.playMerge(newIndex);
+                this.showMergeEffect(midX, midY, points);
+                this.setExpression(newBody.id, EXPRESSIONS.HAPPY, 1500);
+                this.triggerNearbyReactions(midX, midY, newBody.id);
+                // 근처에서 합체되면 짱돌도 같이 사라짐
+                this.removeRocksNear(midX, midY);
+                
+                if (this.comboCount >= 2) {
+                    this.showComboEffect(midX, midY);
+                    this.sound.playCombo(this.comboCount);
+                    this.bodies.forEach(s => { if (s.id !== newBody.id) this.setExpression(s.id, EXPRESSIONS.EXCITED, 1000); });
+                }
+
+                setTimeout(() => this.mergingPairs.delete(pairKey), 100);
+            }
+
+            showMergeEffect(x, y, points) {
+                const el = document.createElement('div');
+                el.className = 'combo-text';
+                el.textContent = `+${points}`;
+                el.style.left = x + 'px';
+                el.style.top = (y + 50) + 'px';
+                this.wrapper.appendChild(el);
+                setTimeout(() => el.remove(), 1200);
+                this.createBurstEffect(x, y + 50);
+            }
+
+            createBurstEffect(x, y) {
+                ['#FF6B6B','#FECA57','#48DBFB','#1DD1A1','#FF9FF3'].forEach(c => {
+                    const p = document.createElement('div');
+                    p.className = 'combo-burst';
+                    p.style.cssText = `left:${x}px;top:${y}px;width:12px;height:12px;background:${c};border-radius:50%`;
+                    this.wrapper.appendChild(p);
+                    setTimeout(() => p.remove(), 500);
+                });
+            }
+
+            showComboEffect(x, y) {
+                const el = document.createElement('div');
+                el.className = 'combo-text';
+                el.textContent = `🔥 COMBO x${this.comboCount}! 🔥`;
+                el.style.cssText = `left:${x}px;top:${y+15}px;font-size:20px;color:#D63031`;
+                this.wrapper.appendChild(el);
+                setTimeout(() => el.remove(), 1200);
+            }
+
+            updateUI() { document.getElementById('score').textContent = this.score; }
+
+            checkGameOver() {
+                const dangerY = (typeof this.dangerY === 'number') ? this.dangerY : 40;
+                let isOverflowing = false;
+
+                for (const shape of this.bodies) {
+                    // 새로 떨어뜨린 도형이 막 생성된 순간(위쪽)에는 바로 오버가 나지 않도록,
+                    // 다른 물체와 한 번이라도 접촉한 도형만 체크한다.
+                    if (!shape.hasLanded) continue;
+
+                    const topY = (shape.body && shape.body.bounds) ? shape.body.bounds.min.y : (shape.body.position.y - SHAPES[shape.shapeIndex].size);
+                    const isSettled =
+                        Math.abs(shape.body.velocity.y) < 0.6 &&
+                        Math.abs(shape.body.velocity.x) < 0.6 &&
+                        Math.abs(shape.body.angularVelocity) < 0.06;
+
+                    if (topY <= dangerY) {
+                        isOverflowing = true;
+                        this.setExpression(shape.id, EXPRESSIONS.WORRIED, 120);
+
+                        // '선 위로 올라오게 쌓이는 순간' = 위험선 위쪽에서 안정되면 즉시 게임오버
+                        if (isSettled) {
+                            this.gameOver();
+                            return;
+                        }
+                    }
+                }
+
+                document.getElementById('overflow-warning').style.display = isOverflowing ? 'block' : 'none';
+            }
+
+            gameOver() {
+                this.isGameOver = true;
+                this.sound.playGameOver();
+                document.getElementById('final-score').textContent = this.score;
+                document.getElementById('game-over').classList.add('show');
+                document.getElementById('overflow-warning').style.display = 'none';
+                try { this.onGameOver && this.onGameOver(); } catch(e) {}
+            }
+
+            restart() {
+                Matter.Composite.clear(this.world, false, true);
+                this.bodies = [];
+                this.score = 0;
+                this.isGameOver = false;
+                this.canDrop = true;
+                this.comboCount = 0;
+                this.lastMergeTime = 0;
+                this.shakeRemaining = 2;
+                this.blinkTimers.clear();
+                this.expressionTimers.clear();
+                this.mergingPairs.clear();
+                this.setupPhysics();
+                this.generateNextShape();
+                this.generateNextShape();
+                this.updateUI();
+                this.updateShakeButton();
+                document.getElementById('game-over').classList.remove('show');
+
+                // 사용자가 음악을 꺼두지 않았다면, 재시작 시에도 자동으로 음악 재생
+                if (this.musicEnabled && this.soundInitialized && !this.sound.musicPlaying) {
+                    this.sound.startMusic();
+                    const musicBtn = document.getElementById('music-btn');
+                    if (musicBtn) musicBtn.textContent = '🎶';
+                }
+                try { this.onRestart && this.onRestart(); } catch(e) {}
+            }
+
+            render() {
+                this.ctx.clearRect(0, 0, this.width, this.height);
+                const now = Date.now();
+                this.bodies.forEach(shape => {
+                    const body = shape.body;
+                    const size = SHAPES[0].size;
+                    this.ctx.save();
+                    this.ctx.translate(body.position.x, body.position.y);
+                    this.ctx.rotate(body.angle);
+                    if (shape.isRock) this.drawRock(size, body.id, now);
+                    else this.drawShape(shape.shapeIndex, SHAPES[shape.shapeIndex].size, body.id, now);
+                    this.ctx.restore();
+                });
+            }
+
+            drawRock(size, bodyId, now) {
+                // 각이 진 짱돌 + x_x 얼굴
+                this.ctx.fillStyle = '#7f8c8d';
+                this.ctx.strokeStyle = '#2d3436';
+                this.ctx.lineWidth = Math.max(2, size * 0.12);
+                // body vertices를 그대로 그리면 렌더에서 이미 rotate/translate 했기 때문에 원점 기준으로 그리기 어려워서
+                // 간단한 육각형 느낌의 돌을 그림
+                const r = size * 0.95;
+                this.ctx.beginPath();
+                for (let i = 0; i < 6; i++) {
+                    const a = (Math.PI * 2 * i) / 6;
+                    const rr = r * (0.82 + (i % 2) * 0.12);
+                    const x = Math.cos(a) * rr;
+                    const y = Math.sin(a) * rr;
+                    if (i === 0) this.ctx.moveTo(x, y);
+                    else this.ctx.lineTo(x, y);
+                }
+                this.ctx.closePath();
+                this.ctx.fill();
+                this.ctx.stroke();
+
+                // x_x eyes
+                const eg = size * 0.33;
+                const ey = -size * 0.05;
+                this.ctx.strokeStyle = '#1f1f1f';
+                this.ctx.lineWidth = Math.max(2, size * 0.12);
+                const cross = size * 0.12;
+
+                const drawX = (cx, cy) => {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(cx - cross, cy - cross);
+                    this.ctx.lineTo(cx + cross, cy + cross);
+                    this.ctx.moveTo(cx - cross, cy + cross);
+                    this.ctx.lineTo(cx + cross, cy - cross);
+                    this.ctx.stroke();
+                };
+                drawX(-eg, ey);
+                drawX(eg, ey);
+
+                // mouth (flat)
+                this.ctx.beginPath();
+                this.ctx.moveTo(-size * 0.22, size * 0.32);
+                this.ctx.lineTo(size * 0.22, size * 0.32);
+                this.ctx.stroke();
+            }
+
+            drawShape(shapeIndex, size, bodyId, now) {
+                const shape = SHAPES[shapeIndex];
+                const grad = this.ctx.createLinearGradient(-size, -size, size, size);
+                grad.addColorStop(0, this.lightenColor(shape.color, 15));
+                grad.addColorStop(1, this.darkenColor(shape.color, 15));
+                
+                this.ctx.fillStyle = grad;
+                this.ctx.strokeStyle = this.darkenColor(shape.color, 15);
+                this.ctx.lineWidth = 2;
+                
+                this.ctx.beginPath();
+                this.drawShapePath(shape.type, size);
+                this.ctx.fill();
+                this.ctx.stroke();
+                this.drawFace(size, bodyId, now);
+            }
+
+            drawShapePath(type, r) {
+                switch(type) {
+                    case 'circle': case 'bigcircle': this.ctx.arc(0, 0, r, 0, Math.PI*2); break;
+                    case 'triangle': for(let i=0;i<3;i++){const a=(i*120-90)*Math.PI/180;i===0?this.ctx.moveTo(r*Math.cos(a),r*Math.sin(a)):this.ctx.lineTo(r*Math.cos(a),r*Math.sin(a));}this.ctx.closePath();break;
+                    case 'isoceles': this.ctx.moveTo(0,-r*1.3);this.ctx.lineTo(r*0.7,r*0.7);this.ctx.lineTo(-r*0.7,r*0.7);this.ctx.closePath();break;
+                    case 'square': this.ctx.rect(-r*0.8,-r*0.8,r*1.6,r*1.6);break;
+                    case 'rectangle': this.ctx.rect(-r*1.1,-r*0.6,r*2.2,r*1.2);break;
+                    case 'diamond': this.ctx.moveTo(0,-r);this.ctx.lineTo(r*0.75,0);this.ctx.lineTo(0,r);this.ctx.lineTo(-r*0.75,0);this.ctx.closePath();break;
+                    case 'pentagon': for(let i=0;i<5;i++){const a=(i*72-90)*Math.PI/180;i===0?this.ctx.moveTo(r*Math.cos(a),r*Math.sin(a)):this.ctx.lineTo(r*Math.cos(a),r*Math.sin(a));}this.ctx.closePath();break;
+                    case 'hexagon': for(let i=0;i<6;i++){const a=(i*60-90)*Math.PI/180;i===0?this.ctx.moveTo(r*Math.cos(a),r*Math.sin(a)):this.ctx.lineTo(r*Math.cos(a),r*Math.sin(a));}this.ctx.closePath();break;
+                }
+            }
+
+            drawFace(size, bodyId, now) {
+                const es = Math.max(2, size*0.1), eg = size*0.28, ey = -size*0.05;
+                const exprData = this.expressionTimers.get(bodyId);
+                let expr = EXPRESSIONS.NORMAL;
+                if (exprData && now < exprData.until) expr = exprData.type;
+                else if (exprData) this.expressionTimers.delete(bodyId);
+                
+                let isBlink = false;
+                if (expr === EXPRESSIONS.NORMAL) {
+                    let bt = this.blinkTimers.get(bodyId);
+                    if (!bt) { bt = { next: now + 800 + Math.random()*2000 }; this.blinkTimers.set(bodyId, bt); }
+                    if (now > bt.next) { if (!bt.blinking) { bt.blinking = true; bt.blinkEnd = now + 100; } }
+                    if (bt.blinking) { if (now < bt.blinkEnd) isBlink = true; else { bt.blinking = false; bt.next = now + 1500 + Math.random()*2500; } }
+                }
+                
+                this.ctx.fillStyle = '#2C1810';
+                
+                if (expr === EXPRESSIONS.HAPPY || expr === EXPRESSIONS.EXCITED) {
+                    this.ctx.lineWidth = Math.max(2, size*0.06); this.ctx.strokeStyle = '#2C1810';
+                    this.ctx.beginPath(); this.ctx.arc(-eg, ey, es*0.8, Math.PI*0.1, Math.PI*0.9); this.ctx.stroke();
+                    this.ctx.beginPath(); this.ctx.arc(eg, ey, es*0.8, Math.PI*0.1, Math.PI*0.9); this.ctx.stroke();
+                } else if (expr === EXPRESSIONS.SURPRISED) {
+                    this.ctx.beginPath(); this.ctx.arc(-eg, ey, es*1.3, 0, Math.PI*2); this.ctx.fill();
+                    this.ctx.beginPath(); this.ctx.arc(eg, ey, es*1.3, 0, Math.PI*2); this.ctx.fill();
+                    this.ctx.fillStyle = '#fff';
+                    this.ctx.beginPath(); this.ctx.arc(-eg-es*0.3, ey-es*0.4, es*0.4, 0, Math.PI*2); this.ctx.fill();
+                    this.ctx.beginPath(); this.ctx.arc(eg-es*0.3, ey-es*0.4, es*0.4, 0, Math.PI*2); this.ctx.fill();
+                } else if (expr === EXPRESSIONS.WORRIED) {
+                    this.ctx.beginPath(); this.ctx.ellipse(-eg, ey-es*0.2, es, es*0.7, -0.2, 0, Math.PI*2); this.ctx.fill();
+                    this.ctx.beginPath(); this.ctx.ellipse(eg, ey-es*0.2, es, es*0.7, 0.2, 0, Math.PI*2); this.ctx.fill();
+                    this.ctx.fillStyle = '#fff';
+                    this.ctx.beginPath(); this.ctx.arc(-eg-es*0.2, ey-es*0.4, es*0.3, 0, Math.PI*2); this.ctx.fill();
+                    this.ctx.beginPath(); this.ctx.arc(eg-es*0.2, ey-es*0.4, es*0.3, 0, Math.PI*2); this.ctx.fill();
+                } else {
+                    const sy = isBlink ? 0.12 : 1;
+                    this.ctx.beginPath(); this.ctx.ellipse(-eg, ey, es, es*1.3*sy, 0, 0, Math.PI*2); this.ctx.fill();
+                    this.ctx.beginPath(); this.ctx.ellipse(eg, ey, es, es*1.3*sy, 0, 0, Math.PI*2); this.ctx.fill();
+                    if (!isBlink) {
+                        this.ctx.fillStyle = '#fff';
+                        this.ctx.beginPath(); this.ctx.ellipse(-eg-es*0.25, ey-es*0.35, es*0.35, es*0.4, 0, 0, Math.PI*2); this.ctx.fill();
+                        this.ctx.beginPath(); this.ctx.ellipse(eg-es*0.25, ey-es*0.35, es*0.35, es*0.4, 0, 0, Math.PI*2); this.ctx.fill();
+                    }
+                }
+                
+                const my = size*0.25, mw = size*0.25;
+                this.ctx.lineWidth = Math.max(1.5, size*0.05); this.ctx.lineCap = 'round';
+                
+                if (expr === EXPRESSIONS.HAPPY) {
+                    this.ctx.strokeStyle = '#FF6B6B';
+                    this.ctx.beginPath(); this.ctx.arc(0, my-mw*0.1, mw*0.7, 0.15, Math.PI-0.15); this.ctx.stroke();
+                } else if (expr === EXPRESSIONS.EXCITED) {
+                    this.ctx.fillStyle = '#FF6B6B';
+                    this.ctx.beginPath(); this.ctx.ellipse(0, my+mw*0.2, mw*0.6, mw*0.5, 0, 0, Math.PI*2); this.ctx.fill();
+                    this.ctx.fillStyle = '#8B4513';
+                    this.ctx.beginPath(); this.ctx.ellipse(0, my+mw*0.3, mw*0.35, mw*0.25, 0, 0, Math.PI*2); this.ctx.fill();
+                } else if (expr === EXPRESSIONS.SURPRISED) {
+                    this.ctx.strokeStyle = '#8B4513';
+                    this.ctx.beginPath(); this.ctx.arc(0, my+mw*0.2, mw*0.35, 0, Math.PI*2); this.ctx.stroke();
+                } else if (expr === EXPRESSIONS.WORRIED) {
+                    this.ctx.strokeStyle = '#8B4513';
+                    this.ctx.beginPath(); this.ctx.moveTo(-mw/2, my+mw*0.2); this.ctx.quadraticCurveTo(0, my-mw*0.2, mw/2, my+mw*0.2); this.ctx.stroke();
+                } else {
+                    this.ctx.strokeStyle = '#8B4513';
+                    this.ctx.beginPath(); this.ctx.moveTo(-mw/2, my); this.ctx.quadraticCurveTo(0, my+mw*0.5, mw/2, my); this.ctx.stroke();
+                }
+                
+                if (expr === EXPRESSIONS.HAPPY || expr === EXPRESSIONS.EXCITED) {
+                    this.ctx.fillStyle = 'rgba(255,130,130,0.5)';
+                    this.ctx.beginPath(); this.ctx.ellipse(-eg-es*2, ey+es*2.5, es*1.3, es*0.9, 0, 0, Math.PI*2); this.ctx.fill();
+                    this.ctx.beginPath(); this.ctx.ellipse(eg+es*2, ey+es*2.5, es*1.3, es*0.9, 0, 0, Math.PI*2); this.ctx.fill();
+                }
+                if (expr === EXPRESSIONS.WORRIED) {
+                    this.ctx.fillStyle = 'rgba(100,180,255,0.7)';
+                    this.ctx.beginPath(); this.ctx.ellipse(eg+es*2.5, ey-es, es*0.4, es*0.6, 0, 0, Math.PI*2); this.ctx.fill();
+                }
+            }
+
+            gameLoop() {
+                if (!this.isGameOver) {
+                    Matter.Engine.update(this.engine, 1000/60);
+                    this.checkGameOver();
+                }
+                this.render();
+                requestAnimationFrame(() => this.gameLoop());
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const game = new ShapeGame();
+            window.__shapeGame = game;
+            window.dispatchEvent(new CustomEvent('shapeGameReady', { detail: { game } }));
+        });
+    </script>
+    <script type="module" src="./js/main.js"></script>
 </body>
 </html>
