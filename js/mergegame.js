@@ -223,7 +223,7 @@ export class MergeGame {
     ctx.clearRect(0,0,w,h);
 
     // background subtle
-    ctx.fillStyle = "#0b1220";
+    ctx.fillStyle = "#f6f1e6";
     ctx.fillRect(0,0,w,h);
 
     // danger line
@@ -590,7 +590,7 @@ function drawPolyWorld(ctx, verts){
 export function drawOpponent(ctx, objects){
   const w = ctx.canvas.width, h = ctx.canvas.height;
   ctx.clearRect(0,0,w,h);
-  ctx.fillStyle = "#0b1220";
+  ctx.fillStyle = "#f6f1e6";
   ctx.fillRect(0,0,w,h);
   if(!objects || !objects.length) return;
 
