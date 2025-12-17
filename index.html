@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>도형 합치기 게임</title>
+    <link rel="icon" href="favicon.ico">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Jua&display=swap');
         
@@ -51,7 +52,41 @@
             flex-shrink: 0;
         }
         
-        .score-section {
+        
+
+        /* --- Top UI layout (mobile tidy) --- */
+        .top-ui{
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 8px;
+            padding: 6px 10px;
+            flex-shrink: 0;
+        }
+        .top-left{
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .top-row{
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+        .top-row.main{
+            justify-content: flex-start;
+        }
+        .top-row.sub{
+            justify-content: flex-start;
+        }
+        .top-ui .score{
+            font-size: 30px;
+            line-height: 1;
+        }
+.score-section {
             text-align: center;
         }
         
@@ -414,16 +449,14 @@
             padding: 0 10px;
             font-size: 12px;
         }
-        .opp-panel{
-            position: absolute;
-            right: 10px;
-            top: 10px;
+                .opp-panel{
             width: 128px;
             padding: 6px;
             border-radius: 14px;
             background: rgba(255,255,255,0.88);
             box-shadow: 0 6px 18px rgba(0,0,0,0.18);
             pointer-events: none;
+            flex-shrink: 0;
         }
         .opp-title{
             font-size: 10px;
@@ -443,27 +476,33 @@
 </head>
 <body>
     <div class="game-container" id="game-container">
-        <div class="header">
-            <div class="score-section">
-                <div class="score" id="score">0</div>
-            </div>
-            <div class="controls">
-                <div class="next-preview">
-                    <span>NEXT</span>
-                    <div class="next-shape-container" id="next-shape"></div>
+                <div class="top-ui">
+            <div class="top-left">
+                <div class="top-row main">
+                    <div class="score" id="score">0</div>
+                    <button class="btn net-btn" id="match-btn" title="온라인 매칭">매칭</button>
+                    <div class="net-pill" id="net-status">오프라인</div>
+                    <button class="btn music-btn" id="music-btn" title="음악">🎶</button>
+                    <button class="btn" id="fullscreen-btn" title="전체화면">⛶</button>
                 </div>
+                <div class="top-row sub">
+                    <div class="next-preview">
+                        <span>NEXT</span>
+                        <div class="next-shape-container" id="next-shape"></div>
+                    </div>
+                    <button class="shake-btn" id="shake-btn" title="흔들기">
+                        <span class="cup-icon">🥤</span>
+                        <span class="shake-text">흔들기 <span id="shake-count">X2</span></span>
+                    </button>
+                </div>
+            </div>
 
-                <button class="btn net-btn" id="match-btn" title="온라인 매칭">매칭</button>
-                <div class="net-pill" id="net-status">오프라인</div>
-                <button class="shake-btn" id="shake-btn" title="흔들기">
-                    <span class="cup-icon">🥤</span>
-                    <span class="shake-text">흔들기 <span id="shake-count">X2</span></span>
-                </button>
-                <button class="btn music-btn" id="music-btn" title="음악">🎶</button>
-                <button class="btn" id="fullscreen-btn" title="전체화면">⛶</button>
+            <div class="opp-panel" id="opp-panel">
+                <div class="opp-title" id="opp-title">상대 (연결 대기…)</div>
+                <canvas id="opp-canvas" width="120" height="170"></canvas>
             </div>
         </div>
-        
+
         <div class="shape-progression" id="shape-progression"></div>
         
         <div class="game-area-wrapper">
@@ -476,13 +515,7 @@
                 <div class="danger-line"></div>
                 <div class="overflow-warning" id="overflow-warning">⚠️ 넘친다!</div>
                 <canvas id="game-canvas"></canvas>
-                
-                <div class="opp-panel" id="opp-panel">
-                    <div class="opp-title" id="opp-title">상대 (연결 대기…)</div>
-                    <canvas id="opp-canvas" width="120" height="170"></canvas>
-                </div>
-
-                <div class="game-over-overlay" id="game-over">
+<div class="game-over-overlay" id="game-over">
                     <div class="game-over-text">게임 오버!</div>
                     <div style="color: #fff; font-size: 22px; margin-bottom: 12px;">
                         점수: <span id="final-score">0</span>
