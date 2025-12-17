@@ -142,12 +142,17 @@ function drawOpp(state){
   oppCtx.fillStyle = "rgba(255,255,255,0.35)";
   oppCtx.fillRect(0,0,cv.width,cv.height);
 
-  if(!state || !state.bodies || !state.w || !state.h) return;
+  if(!state || !state.w || !state.h) return;
 
   const shapes = window.SHAPES || [];
   const scaleX = cv.width / state.w;
   const scaleY = cv.height / state.h;
   const scale = Math.min(scaleX, scaleY);
+
+  // Draw opponent bowl outline + danger line (so the curved bottom is visible)
+  drawOppCup(oppCtx, cv, state, scaleX, scaleY);
+
+  if(!state.bodies) return;
 
   for(const b of state.bodies){
     const x = b.x * scaleX;
@@ -173,6 +178,51 @@ function drawOpp(state){
     oppCtx.restore();
   }
 }
+
+function drawOppCup(ctx, cv, state, scaleX, scaleY){
+  // Match main bowl geometry (walls to 0.6h and ellipse bottom)
+  const pad = 8 * scaleX;
+  const curveTopY = (state.h * 0.6) * scaleY;
+  const centerX = (state.w / 2) * scaleX;
+  const radiusX = (state.w / 2 - 8) * scaleX;
+  const bottomY = (state.h + 10) * scaleY;
+  const radiusY = bottomY - curveTopY;
+
+  // subtle inner fill
+  ctx.save();
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = "rgba(255,255,255,0.16)";
+  ctx.beginPath();
+  ctx.moveTo(pad, 0);
+  ctx.lineTo(pad, curveTopY);
+  ctx.ellipse(centerX, curveTopY, radiusX, radiusY, 0, Math.PI, 0, false);
+  ctx.lineTo(cv.width - pad, 0);
+  ctx.closePath();
+  ctx.fill();
+
+  // outline
+  ctx.strokeStyle = "rgba(180,160,140,0.75)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(pad, 0);
+  ctx.lineTo(pad, curveTopY);
+  ctx.ellipse(centerX, curveTopY, radiusX, radiusY, 0, Math.PI, 0, false);
+  ctx.lineTo(cv.width - pad, 0);
+  ctx.stroke();
+
+  // danger dashed line (same as main: 35px from top)
+  const dangerY = 35 * scaleY;
+  ctx.strokeStyle = "rgba(255,107,107,0.6)";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6,6]);
+  ctx.beginPath();
+  ctx.moveTo(pad, dangerY);
+  ctx.lineTo(cv.width - pad, dangerY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
 
 function drawShape(ctx, type, color, size){
   ctx.fillStyle = color;

@@ -384,6 +384,35 @@
             50% { opacity: 0.5; }
         }
         
+
+        /* Auto-drop warning (after 3s idle, shows 3-2-1 then drops) */
+        .autodrop-warning{
+            position: absolute;
+            top: 62px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 80;
+            display: none;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 14px;
+            border-radius: 16px;
+            background: rgba(0,0,0,0.55);
+            color: #fff;
+            box-shadow: 0 8px 22px rgba(0,0,0,0.22);
+            backdrop-filter: blur(2px);
+            pointer-events: none;
+        }
+        .autodrop-warning.show{ display:flex; }
+        .autodrop-warning .count{
+            font-size: 18px;
+            font-weight: 900;
+            color: #FFEAA7;
+            text-shadow: 2px 2px 0 rgba(0,0,0,0.25);
+            min-width: 18px;
+            text-align: right;
+        }
+
         .music-btn {
             background: linear-gradient(180deg, #A29BFE 0%, #6C5CE7 100%) !important;
             box-shadow: 0 3px 0 #5B4ACF, 0 5px 10px rgba(0,0,0,0.2) !important;
@@ -395,15 +424,22 @@
         
         .game-container:fullscreen,
         .game-container:-webkit-full-screen {
-            max-width: 400px;
+            max-width: 420px;
             padding: 10px;
             background: linear-gradient(180deg, #FFEAA7 0%, #FDCB6E 50%, #F8B739 100%);
-            justify-content: center;
+            /* Fullscreen on mobile can clip with 100vh/centering; use measured viewport height and top-align */
+            min-height: var(--app-h);
+            height: var(--app-h);
+            overflow-y: auto;
+            justify-content: flex-start;
+            padding-top: calc(10px + env(safe-area-inset-top, 0px));
+            padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
         }
         
         .game-container:fullscreen .game-area,
         .game-container:-webkit-full-screen .game-area {
-            height: clamp(380px, calc(var(--app-h) - 220px), 520px);
+            /* Keep the bowl fully visible in fullscreen (avoid top/bottom clipping) */
+            height: clamp(320px, calc(var(--app-h) - 320px), 480px);
         }
 
         /* Online overlay (matching / result) */
@@ -658,7 +694,11 @@
                 <div class="drop-zone-touch" id="drop-zone"></div>
                 <div class="current-shape" id="current-shape"></div>
             </div>
-            
+            <div class="autodrop-warning" id="autodrop-warning" aria-hidden="true">
+                <span class="msg">도형을 담아주세요!</span>
+                <span class="count" id="autodrop-count">3</span>
+            </div>
+
             <div class="game-area" id="game-area">
                 <div class="danger-line"></div>
                 <div class="overflow-warning" id="overflow-warning">⚠️ 넘친다!</div>
@@ -702,11 +742,21 @@
 
         // Fix mobile viewport clipping (100vh address-bar issues)
         function __setAppHeight(){
-            try{ document.documentElement.style.setProperty('--app-h', window.innerHeight + 'px'); }catch(e){}
+            try{
+                const vv = window.visualViewport;
+                const h = (vv && typeof vv.height === 'number') ? vv.height : window.innerHeight;
+                document.documentElement.style.setProperty('--app-h', Math.round(h) + 'px');
+            }catch(e){}
         }
         __setAppHeight();
         window.addEventListener('resize', __setAppHeight);
         window.addEventListener('orientationchange', __setAppHeight);
+        if(window.visualViewport){
+            window.visualViewport.addEventListener('resize', __setAppHeight);
+            window.visualViewport.addEventListener('scroll', __setAppHeight);
+        }
+        document.addEventListener('fullscreenchange', __setAppHeight);
+        document.addEventListener('webkitfullscreenchange', __setAppHeight);
 
         class SoundSystem {
             constructor() {
@@ -806,6 +856,14 @@
                 this.onGameOver = null;
                 this.onRestart = null;
                 this._comboSeq = 0;
+
+                // Auto-drop (idle->warning 3-2-1 -> drop)
+                this._spawnTs = Date.now();
+                this._autoWarnActive = false;
+                this._autoCountdown = 0;
+                this._autoTimer = null;
+                this.autoWarnEl = null;
+                this.autoCountEl = null;
                 
                 this.init();
             }
@@ -814,6 +872,9 @@
                 this.setupCanvas();
                 this.setupPhysics();
                 this.setupEvents();
+                // Auto-drop UI elements
+                this.autoWarnEl = document.getElementById('autodrop-warning');
+                this.autoCountEl = document.getElementById('autodrop-count');
                 this.createShapeProgression();
                 this.generateNextShape();
                 this.generateNextShape();
@@ -997,6 +1058,54 @@
                 document.getElementById('shake-btn').disabled = this.shakeRemaining <= 0;
             }
 
+            // ---- Auto-drop: 3s idle -> warning + 3-2-1 -> auto drop ----
+            resetAutoDropTimer(){
+                this._spawnTs = Date.now();
+                this._autoWarnActive = false;
+                this._autoCountdown = 0;
+                if(this._autoTimer){ try{ clearInterval(this._autoTimer); }catch{} this._autoTimer = null; }
+                if(this.autoWarnEl){
+                    this.autoWarnEl.classList.remove('show');
+                    this.autoWarnEl.setAttribute('aria-hidden','true');
+                }
+            }
+
+            startAutoDropCountdown(){
+                if(this._autoWarnActive || this.isGameOver) return;
+                this._autoWarnActive = true;
+                this._autoCountdown = 3;
+                if(this.autoCountEl) this.autoCountEl.textContent = String(this._autoCountdown);
+                if(this.autoWarnEl){
+                    this.autoWarnEl.classList.add('show');
+                    this.autoWarnEl.setAttribute('aria-hidden','false');
+                }
+                if(this._autoTimer){ try{ clearInterval(this._autoTimer); }catch{} }
+                this._autoTimer = setInterval(()=>{
+                    if(this.isGameOver){ this.resetAutoDropTimer(); return; }
+                    // If player already dropped, stop
+                    if(!this.canDrop){ this.resetAutoDropTimer(); return; }
+
+                    this._autoCountdown -= 1;
+                    if(this._autoCountdown <= 0){
+                        this.resetAutoDropTimer();
+                        // Force drop (same as click)
+                        this.dropShape(true);
+                        return;
+                    }
+                    if(this.autoCountEl) this.autoCountEl.textContent = String(this._autoCountdown);
+                }, 1000);
+            }
+
+            tickAutoDrop(){
+                if(this.isGameOver) return;
+                if(!this.canDrop) return; // cooldown while dropping
+                if(this._autoWarnActive) return; // countdown in progress
+                const elapsed = Date.now() - (this._spawnTs || Date.now());
+                if(elapsed >= 3000){
+                    this.startAutoDropCountdown();
+                }
+            }
+
             toggleFullscreen() {
                 const c = document.getElementById('game-container');
                 if (!document.fullscreenElement) (c.requestFullscreen || c.webkitRequestFullscreen || c.msRequestFullscreen).call(c);
@@ -1022,6 +1131,7 @@
                 }
                 this.nextShapeIndex = idx;
                 this.updatePreview();
+                this.resetAutoDropTimer();
             }
 
             updatePreview() {
@@ -1067,8 +1177,9 @@
                 });
             }
 
-            dropShape() {
+            dropShape(_forced=false) {
                 if (!this.canDrop || this.isGameOver) return;
+                this.resetAutoDropTimer();
                 this.canDrop = false;
                 this.sound.playDrop();
                 const body = this.createPhysicsBody(this.dropX, 50, this.currentShapeIndex);
@@ -1532,6 +1643,7 @@
                 if (!this.isGameOver) {
                     Matter.Engine.update(this.engine, 1000/60);
                     this.checkGameOver();
+                    this.tickAutoDrop();
                 }
                 this.render();
                 requestAnimationFrame(() => this.gameLoop());
