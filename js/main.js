@@ -13,14 +13,98 @@ const ui = {
   status: document.getElementById("net-status"),
   oppTitle: document.getElementById("opp-title"),
   oppCanvas: document.getElementById("opp-canvas"),
+  overlay: document.getElementById("net-overlay"),
+  overlayTitle: document.getElementById("net-overlay-title"),
+  overlayDesc: document.getElementById("net-overlay-desc"),
+  overlayTimer: document.getElementById("net-overlay-timer"),
+  overlayRetry: document.getElementById("net-overlay-retry"),
+  overlayClose: document.getElementById("net-overlay-close"),
 };
 
 function setStatus(t){
   if(ui.status) ui.status.textContent = t;
 }
 
+function showNetOverlay({title, desc, seconds, canClose=true, canRetry=true}={}){
+  if(!ui.overlay) return;
+  if(ui.overlayTitle && typeof title === "string") ui.overlayTitle.textContent = title;
+  if(ui.overlayDesc && typeof desc === "string") ui.overlayDesc.textContent = desc;
+  if(ui.overlayTimer){
+    ui.overlayTimer.textContent = (typeof seconds === "number") ? `남은 시간: ${seconds}s` : "";
+  }
+  if(ui.overlayRetry) ui.overlayRetry.style.display = canRetry ? "" : "none";
+  if(ui.overlayClose) ui.overlayClose.style.display = canClose ? "" : "none";
+  ui.overlay.classList.add("show");
+  ui.overlay.setAttribute("aria-hidden", "false");
+}
+
+function hideNetOverlay(){
+  if(!ui.overlay) return;
+  ui.overlay.classList.remove("show");
+  ui.overlay.setAttribute("aria-hidden", "true");
+}
+
+if(ui.overlayRetry){
+  ui.overlayRetry.addEventListener("click", ()=>location.reload());
+}
+if(ui.overlayClose){
+  ui.overlayClose.addEventListener("click", ()=>hideNetOverlay());
+}
+
+setStatus("오프라인");
+
+function comboToRocks(combo){
+  const c = combo|0;
+  if(c < 3) return 0;
+  if(c === 3) return 1;
+  if(c === 4) return 2;
+  return Math.min(6, c - 2);
+}
+
+let waitTimer = null;
+let waitRemain = 0;
+let joinedAt = 0;
+let resolved = false;
+
+function beginCountdown(seconds){
+  try{ if(waitTimer) clearInterval(waitTimer); }catch{}
+  waitRemain = seconds|0;
+  showNetOverlay({ title: "매칭 중…", desc: "상대방을 찾는 중입니다.", seconds: waitRemain, canClose: true, canRetry: false });
+  waitTimer = setInterval(()=>{
+    waitRemain -= 1;
+    if(waitRemain < 0) waitRemain = 0;
+    // still waiting
+    if(mode !== "online"){
+      showNetOverlay({ title: "매칭 중…", desc: "상대방을 찾는 중입니다.", seconds: waitRemain, canClose: true, canRetry: false });
+    }
+    if(waitRemain <= 0 && mode !== "online"){
+      try{ clearInterval(waitTimer); }catch{}
+      waitTimer = null;
+      setStatus("오프라인");
+      mode = "offline";
+      showNetOverlay({ title: "매칭 실패", desc: "20초 안에 상대를 찾지 못했습니다.", seconds: undefined, canClose: true, canRetry: true });
+    }
+  }, 1000);
+}
+
+function startMatching(){
+  if(mode !== "offline"){
+    location.reload();
+    return;
+  }
+  if(!game){
+    showNetOverlay({ title: "로딩 중…", desc: "게임 준비가 끝난 뒤 다시 눌러주세요.", canClose: true, canRetry: false });
+    return;
+  }
+  resolved = false;
+  mode = "matching";
+  setStatus("연결 중…");
+  beginCountdown(20);
+  bootOnline();
+}
+
 if(ui.matchBtn){
-  ui.matchBtn.addEventListener("click", ()=>location.reload());
+  ui.matchBtn.addEventListener("click", startMatching);
 }
 
 // --- Online flow
@@ -185,6 +269,7 @@ async function enterRoom(joined){
   mySlot = joined.slot;
   pid = joined.pid;
   hbTimer = joined.hbTimer;
+  joinedAt = Date.now();
 
   refs = roomRefs({db, api, roomId});
 
@@ -197,6 +282,12 @@ async function enterRoom(joined){
       const score = state?.score ?? 0;
       ui.oppTitle.textContent = `상대 (점수 ${score})`;
     }
+    // win detection
+    if(state?.over && !resolved){
+      resolved = true;
+      try{ if(game) game.canDrop = false; }catch{}
+      showNetOverlay({ title: "승리!", desc: "상대가 게임오버 되었습니다.", seconds: undefined, canClose: true, canRetry: true });
+    }
     drawOpp(state);
   }});
 
@@ -206,13 +297,31 @@ async function enterRoom(joined){
   // publish loop
   if(publishTimer) clearInterval(publishTimer);
   publishTimer = setInterval(()=>{
-    if(!game || mode !== "online") return;
+    if(!game || mode === "offline") return;
     publishMyState({ api, statesRef: refs.statesRef, pid, state: game.getNetState() }).catch(()=>{});
   }, 120);
+
+  // hook combo -> attack & gameover -> result
+  if(game){
+    game.onComboEnd = (cnt)=>{
+      if(mode === "offline" || !refs || !refs.eventsRef) return;
+      const n = comboToRocks(cnt);
+      if(n <= 0) return;
+      pushEvent({ api, eventsRef: refs.eventsRef, event: { from: pid, kind: "rocks", payload: { n } } }).catch(()=>{});
+    };
+    game.onGameOver = ()=>{
+      if(mode === "offline" || !refs || !refs.eventsRef) return;
+      if(!resolved){
+        resolved = true;
+        showNetOverlay({ title: "패배", desc: "내 게임오버!", seconds: undefined, canClose: true, canRetry: true });
+      }
+      pushEvent({ api, eventsRef: refs.eventsRef, event: { from: pid, kind: "over", payload: { score: game?.score ?? 0 } } }).catch(()=>{});
+    };
+  }
 }
 
 function onRoomUpdate(room){
-  if(mode !== "online") return;
+  if(mode === "offline") return;
   if(!room || !room.meta){
     setStatus("방 없음(오프라인)");
     return;
@@ -222,7 +331,15 @@ function onRoomUpdate(room){
   const players = room.players || {};
   const ids = Object.keys(players);
 
-  setStatus(ids.length >= 2 ? "연결됨" : "연결 대기…");
+  if(ids.length >= 2){
+    setStatus("연결됨");
+    mode = "online";
+    try{ if(waitTimer) clearInterval(waitTimer); }catch{}
+    waitTimer = null;
+    hideNetOverlay();
+  }else{
+    setStatus("연결 대기…");
+  }
   if(ui.oppTitle) ui.oppTitle.textContent = ids.length >= 2 ? "상대" : "상대 (연결 대기…)";
 
   if(ids.length === 2 && meta.state === "open"){
@@ -232,9 +349,22 @@ function onRoomUpdate(room){
 
 function onEventRecv({key, ev}){
   if(!ev) return;
+  // ignore stale events from previous occupants
+  if(joinedAt && ev.t && ev.t < joinedAt - 5000){
+    try{ api.remove(api.child(refs.eventsRef, key)).catch(()=>{}); }catch{}
+    return;
+  }
   if(ev.kind === "rocks"){
     const n = Math.max(0, Math.min(12, (ev.payload && ev.payload.n) || 0));
     try{ game?.dropRocks?.(n); }catch{}
+  }
+
+  if(ev.kind === "over"){
+    if(!resolved){
+      resolved = true;
+      try{ if(game) game.canDrop = false; }catch{}
+      showNetOverlay({ title: "승리!", desc: "상대가 게임오버 되었습니다.", seconds: undefined, canClose: true, canRetry: true });
+    }
   }
 
   // consume immediately to avoid leaving logs
@@ -242,23 +372,17 @@ function onEventRecv({key, ev}){
 }
 
 async function bootOnline(){
-  // Wait for game first
   if(!game) return;
-
-  // hook combo -> attack
-  game.onComboEnd = (cnt)=>{
-    if(mode !== "online" || !refs || !refs.eventsRef) return;
-    if(cnt >= 3){
-      pushEvent({ api, eventsRef: refs.eventsRef, event: { from: pid, kind: "rocks", payload: { n: cnt } } }).catch(()=>{});
-    }
-  };
+  if(mode !== "matching") return;
 
   try{
     fb = initFirebase();
     db = fb.db;
     api = fb.api;
   }catch(e){
+    mode = "offline";
     setStatus("오프라인");
+    showNetOverlay({ title: "연결 실패", desc: "Firebase 설정이 없거나 잘못되었습니다.", seconds: undefined, canClose: true, canRetry: true });
     return;
   }
 
@@ -268,7 +392,6 @@ async function bootOnline(){
     try{ await sweepLobbySlots({db, api, lobbyId, maxTeams: 10}); }catch{}
     sweepTimer = setInterval(()=>{ try{ sweepLobbySlots({db, api, lobbyId, maxTeams:10}).catch(()=>{}); }catch{} }, 20000);
 
-    mode = "online";
     setStatus("연결 중…");
 
     const joined = await joinLobby({ db, api, lobbyId, name: "Player", maxTeams: 10 });
@@ -278,6 +401,7 @@ async function bootOnline(){
   }catch(e){
     mode = "offline";
     setStatus("오프라인");
+    showNetOverlay({ title: "연결 실패", desc: "온라인 연결에 실패했습니다. (Firebase 설정 또는 네트워크 확인)", seconds: undefined, canClose: true, canRetry: true });
   }
 }
 
@@ -295,7 +419,7 @@ function bestEffortExitCleanup(){
   try{ oppUnsub?.(); }catch{}
   try{ evUnsub?.(); }catch{}
 
-  if(mode === "online" && db && api && roomId && refs){
+  if(mode !== "offline" && db && api && roomId && refs){
     // 1) 내 노드 먼저 제거(가능하면 onDisconnect도 있지만, 즉시 정리 시도)
     try{ if(refs.playersRef && pid) api.remove(api.child(refs.playersRef, pid)).catch(()=>{}); }catch{}
     try{ if(refs.statesRef && pid) api.remove(api.child(refs.statesRef, pid)).catch(()=>{}); }catch{}
@@ -323,12 +447,12 @@ document.addEventListener("visibilitychange", ()=>{
 // If game over and user closes overlay/reloads, cleanup will run via unload.
 window.addEventListener('shapeGameReady', (e)=>{
   game = e?.detail?.game || window.__shapeGame || null;
-  // boot online once game exists
-  bootOnline();
+  // 온라인은 "매칭" 버튼을 눌렀을 때만 시작
+  setStatus("오프라인");
 });
 
 // In case event was dispatched before this module loaded
 if(window.__shapeGame){
   game = window.__shapeGame;
-  bootOnline();
+  setStatus("오프라인");
 }
