@@ -30,7 +30,8 @@
             /* Keep content pinned to the top so tall layouts don't clip */
             align-items: flex-start;
             user-select: none;
-            overflow-y: auto;
+            /* Keep the full play area visible on mobile (avoid bottom clipping) */
+            overflow: hidden;
             padding-top: env(safe-area-inset-top, 0px);
             padding-bottom: env(safe-area-inset-bottom, 0px);
         
@@ -45,10 +46,11 @@
             display: flex;
             flex-direction: column;
             padding: 6px;
-            /* Let the layout grow if needed (prevents the bowl bottom from getting clipped) */
-            min-height: var(--app-h);
-            height: auto;
-            max-height: none;
+            /* Fit the whole UI inside the visual viewport on mobile (respect safe-areas) */
+            min-height: calc(var(--app-h) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+            height: calc(var(--app-h) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+            max-height: calc(var(--app-h) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+            overflow: hidden;
         }
         
         .header {
@@ -156,10 +158,10 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 8px 6px;
+            padding: 6px 6px;
             background: rgba(255,255,255,0.85);
             border-radius: 14px;
-            margin-bottom: 6px;
+            margin-bottom: 4px;
             flex-shrink: 0;
             gap: 2px;
             box-shadow: 0 3px 10px rgba(0,0,0,0.1);
@@ -185,10 +187,14 @@
         .game-area-wrapper {
             position: relative;
             overflow: visible;
+            display: flex;
+            flex-direction: column;
+            flex: 1 1 auto;
+            min-height: 0;
         }
         
         .drop-area {
-            height: 50px;
+            height: 42px;
             position: relative;
             display: flex;
             justify-content: center;
@@ -225,7 +231,10 @@
             border-radius: 8px 8px 50% 50% / 8px 8px 40% 40%;
             border: 4px solid rgba(180, 160, 140, 0.6);
             border-top: none;
-            height: clamp(300px, calc(var(--app-h) - 285px), 400px);
+            /* Use remaining space (prevents bottom from being cut off on mobile) */
+            height: auto;
+            flex: 1 1 auto;
+            min-height: 275px;
             overflow: hidden;
             box-shadow: 
                 inset 0 0 60px rgba(255,255,255,0.4),
@@ -516,7 +525,7 @@
         }
         #opp-canvas{
             width: 100%;
-            height: 250px;
+            height: 150px;
             border-radius: 10px;
             background: rgba(255,255,255,0.35);
         }
@@ -620,7 +629,7 @@
 
 .header-right #opp-canvas{
     /* Keep the opponent preview compact on mobile */
-    height: 210px;
+    height: 150px;
 }
 
 @media (max-width: 420px){
@@ -670,7 +679,7 @@
     <div class="header-right">
         <div class="opp-panel" id="opp-panel">
             <div class="opp-title" id="opp-title">상대 (연결 대기…)</div>
-            <canvas id="opp-canvas" width="150" height="210"></canvas>
+            <canvas id="opp-canvas" width="150" height="150"></canvas>
         </div>
     </div>
 </div>

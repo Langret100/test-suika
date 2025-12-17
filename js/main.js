@@ -242,30 +242,53 @@ function drawOpp(state){
 }
 
 function drawOppCup(ctx, cv, state, scaleX, scaleY){
-  // Simple: bottom curve + overflow(danger) line aligned to opponent stacking area.
-  const pad = 10 * scaleX;
-  const centerX = cv.width / 2;
+  // Match the real in-game physics cup (same paramization as ShapeGame.setupPhysics in index.html)
+  // so that shapes do NOT appear to stack "under" the bowl curve.
+  const w = state.w;
+  const h = state.h;
+  const inset = 8;
+  const centerX = w / 2;
+  const radiusX = (w / 2) - inset;
+  const curveTopY = h * 0.6;
+  const bottomY = h + 10; // floor segments are slightly below the visible canvas
+  const radiusY = bottomY - curveTopY;
 
-  // overflow line (match main: 35px from top in game coordinates)
+  // overflow line: the main UI uses a fixed 35px from the top
+  const padX = inset * scaleX;
   const dangerY = 35 * scaleY;
+
   ctx.save();
   ctx.strokeStyle = "rgba(255,107,107,0.6)";
   ctx.lineWidth = 2;
   ctx.setLineDash([6,6]);
   ctx.beginPath();
-  ctx.moveTo(pad, dangerY);
-  ctx.lineTo(cv.width - pad, dangerY);
+  ctx.moveTo(padX, dangerY);
+  ctx.lineTo(cv.width - padX, dangerY);
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // bottom curve (∪) - one curve only
-  const endY = cv.height * 0.78;
-  const depth = cv.height * 0.22;
+  // Cup outline: left wall -> curved bottom -> right wall
+  const leftX = centerX - radiusX;
+  const rightX = centerX + radiusX;
+
   ctx.strokeStyle = "rgba(180,160,140,0.85)";
   ctx.lineWidth = 3;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+
   ctx.beginPath();
-  ctx.moveTo(pad, endY);
-  ctx.quadraticCurveTo(centerX, endY + depth, cv.width - pad, endY);
+  ctx.moveTo(leftX * scaleX, 0);
+  ctx.lineTo(leftX * scaleX, curveTopY * scaleY);
+
+  const segments = 24;
+  for(let i=0;i<=segments;i++){
+    const ang = Math.PI - (i / segments) * Math.PI;
+    const x = centerX + radiusX * Math.cos(ang);
+    const y = curveTopY + radiusY * Math.sin(ang);
+    ctx.lineTo(x * scaleX, y * scaleY);
+  }
+
+  ctx.lineTo(rightX * scaleX, 0);
   ctx.stroke();
   ctx.restore();
 }
