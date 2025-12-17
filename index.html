@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>도형 합치기 게임</title>
-    <link rel="icon" href="favicon.ico">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Jua&display=swap');
         
@@ -52,41 +51,7 @@
             flex-shrink: 0;
         }
         
-        
-
-        /* --- Top UI layout (mobile tidy) --- */
-        .top-ui{
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 8px;
-            padding: 6px 10px;
-            flex-shrink: 0;
-        }
-        .top-left{
-            flex: 1;
-            min-width: 0;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-        .top-row{
-            display: flex;
-            align-items: center;
-            gap: 5px;
-            flex-wrap: wrap;
-        }
-        .top-row.main{
-            justify-content: flex-start;
-        }
-        .top-row.sub{
-            justify-content: flex-start;
-        }
-        .top-ui .score{
-            font-size: 30px;
-            line-height: 1;
-        }
-.score-section {
+        .score-section {
             text-align: center;
         }
         
@@ -449,14 +414,16 @@
             padding: 0 10px;
             font-size: 12px;
         }
-                .opp-panel{
+        .opp-panel{
+            position: absolute;
+            right: 10px;
+            top: 10px;
             width: 128px;
             padding: 6px;
             border-radius: 14px;
             background: rgba(255,255,255,0.88);
             box-shadow: 0 6px 18px rgba(0,0,0,0.18);
             pointer-events: none;
-            flex-shrink: 0;
         }
         .opp-title{
             font-size: 10px;
@@ -472,37 +439,153 @@
             background: rgba(255,255,255,0.35);
         }
 
+/* ===== Custom layout: match the provided screenshot (top-left stack + right opponent panel) ===== */
+.header.header-layout{
+    align-items: flex-start;
+    gap: 14px;
+}
+.header-left{
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+}
+.header-right{
+    flex: 0 0 auto;
+}
+
+.controls-row{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: nowrap;
+}
+
+/* 매칭 버튼: 빨강(기본 .btn) + 텍스트 버튼 형태 */
+.match-btn{
+    width: auto;
+    min-width: 70px;
+    padding: 0 14px;
+    height: 42px;
+    border-radius: 14px;
+    font-size: 16px;
+    font-weight: 800;
+}
+
+/* 전체화면 버튼: 보라 */
+.full-btn{
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #A29BFE 0%, #6C5CE7 100%) !important;
+    box-shadow: 0 3px 0 #4E3FCF, 0 5px 10px rgba(0,0,0,0.2) !important;
+}
+.full-btn:active{
+    box-shadow: 0 1px 0 #4E3FCF !important;
+}
+
+/* 음악 버튼은 숨김(기능 호환용 DOM만 유지) */
+.music-btn{ display: none !important; }
+
+.score-section{ text-align: left; }
+.score{ line-height: 1; }
+
+/* NEXT + 흔들기 패널 */
+.control-panel{
+    width: 100%;
+    max-width: 240px;
+    padding: 12px;
+    border-radius: 18px;
+    background: rgba(255,255,255,0.18);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+}
+
+.next-preview-large{
+    padding: 10px 14px;
+    border-radius: 18px;
+    font-size: 14px;
+    gap: 10px;
+    min-height: 44px;
+}
+.next-preview-large .next-shape-container{
+    width: 28px;
+    height: 28px;
+}
+
+.shake-btn-large{
+    margin-top: 10px;
+    width: 100%;
+    min-height: 54px;
+    flex-direction: row;
+    justify-content: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 18px;
+}
+.shake-btn-large .cup-icon{ font-size: 20px; }
+.shake-btn-large .shake-text{ font-size: 14px; color: #fff; }
+
+/* 상대 패널: 게임 컵과 겹치지 않게 헤더 우측에 배치 */
+.header-right .opp-panel{
+    position: relative !important;
+    right: auto !important;
+    top: auto !important;
+    width: 140px;
+}
+
+@media (max-width: 420px){
+    .header.header-layout{ flex-wrap: nowrap; }
+    .header-right .opp-panel{ width: 132px; }
+    .control-panel{ max-width: 210px; }
+    .match-btn{ min-width: 62px; padding: 0 12px; }
+}
+
+@media (max-width: 360px){
+    .header.header-layout{ flex-wrap: wrap; }
+    .header-right{ width: 100%; }
+}
+
     </style>
 </head>
 <body>
     <div class="game-container" id="game-container">
-                <div class="top-ui">
-            <div class="top-left">
-                <div class="top-row main">
-                    <div class="score" id="score">0</div>
-                    <button class="btn net-btn" id="match-btn" title="온라인 매칭">매칭</button>
-                    <div class="net-pill" id="net-status">오프라인</div>
-                    <button class="btn music-btn" id="music-btn" title="음악">🎶</button>
-                    <button class="btn" id="fullscreen-btn" title="전체화면">⛶</button>
-                </div>
-                <div class="top-row sub">
-                    <div class="next-preview">
-                        <span>NEXT</span>
-                        <div class="next-shape-container" id="next-shape"></div>
-                    </div>
-                    <button class="shake-btn" id="shake-btn" title="흔들기">
-                        <span class="cup-icon">🥤</span>
-                        <span class="shake-text">흔들기 <span id="shake-count">X2</span></span>
-                    </button>
-                </div>
-            </div>
-
-            <div class="opp-panel" id="opp-panel">
-                <div class="opp-title" id="opp-title">상대 (연결 대기…)</div>
-                <canvas id="opp-canvas" width="120" height="170"></canvas>
-            </div>
+        
+<div class="header header-layout">
+    <div class="header-left">
+        <div class="controls-row">
+            <button class="btn net-btn match-btn" id="match-btn" title="온라인 매칭">매칭</button>
+            <div class="net-pill" id="net-status">오프라인</div>
+            <button class="btn full-btn" id="fullscreen-btn" title="전체화면">⛶</button>
+            <!-- 음악 버튼은 기능 호환을 위해 DOM에 남기되 화면에서는 숨김 -->
+            <button class="btn music-btn" id="music-btn" title="음악" aria-hidden="true">🎶</button>
         </div>
 
+        <div class="score-section">
+            <div class="score" id="score">0</div>
+        </div>
+
+        <div class="control-panel">
+            <div class="next-preview next-preview-large">
+                <span>NEXT</span>
+                <div class="next-shape-container" id="next-shape"></div>
+            </div>
+
+            <button class="shake-btn shake-btn-large" id="shake-btn" title="흔들기">
+                <span class="cup-icon">🥤</span>
+                <span class="shake-text">흔들기 <span id="shake-count">X2</span></span>
+            </button>
+        </div>
+    </div>
+
+    <div class="header-right">
+        <div class="opp-panel" id="opp-panel">
+            <div class="opp-title" id="opp-title">상대 (연결 대기…)</div>
+            <canvas id="opp-canvas" width="120" height="170"></canvas>
+        </div>
+    </div>
+</div>
         <div class="shape-progression" id="shape-progression"></div>
         
         <div class="game-area-wrapper">
@@ -515,7 +598,8 @@
                 <div class="danger-line"></div>
                 <div class="overflow-warning" id="overflow-warning">⚠️ 넘친다!</div>
                 <canvas id="game-canvas"></canvas>
-<div class="game-over-overlay" id="game-over">
+                
+                <div class="game-over-overlay" id="game-over">
                     <div class="game-over-text">게임 오버!</div>
                     <div style="color: #fff; font-size: 22px; margin-bottom: 12px;">
                         점수: <span id="final-score">0</span>
@@ -1368,6 +1452,8 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             const game = new ShapeGame();
+            // 시작 시 음악을 먼저 재생 시도(브라우저 정책으로 막히면 첫 클릭/터치에서 자동 재생)
+            try { game.sound.init(); game.sound.startMusic(); game.soundInitialized = true; } catch(e) {}
             window.__shapeGame = game;
             window.dispatchEvent(new CustomEvent('shapeGameReady', { detail: { game } }));
         });
