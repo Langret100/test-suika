@@ -1016,22 +1016,27 @@
                     const dropH = dropArea ? dropArea.getBoundingClientRect().height : 0;
                     const maxH = wrapRect ? Math.max(260, wrapRect.height - dropH - 10) : null;
 
-                    const w = this.gameArea.getBoundingClientRect().width;
+                    // IMPORTANT: use *content box* width (clientWidth) so physics/world matches
+                    // the actual drawable area inside the bowl border.
+                    const w = this.gameArea?.clientWidth || this.gameArea.getBoundingClientRect().width;
                     const desiredH = w * (this.worldHDesign / this.worldW);
                     const finalH = maxH ? Math.min(desiredH, maxH) : desiredH;
 
                     this.gameArea.style.height = Math.round(finalH) + 'px';
                 } catch(e) {}
 
-                const rect = this.gameArea.getBoundingClientRect();
-                const cssW = rect.width;
-                const cssH = rect.height;
+                // Use content box size (clientWidth/Height) to avoid border-box drift on short screens.
+                // (getBoundingClientRect includes border; mixing them causes visible mismatch)
+                const cssW = this.gameArea?.clientWidth || this.gameArea.getBoundingClientRect().width;
+                const cssH = this.gameArea?.clientHeight || this.gameArea.getBoundingClientRect().height;
 
                 const dpr = Math.min(2, window.devicePixelRatio || 1);
-                this.canvas.style.width = cssW + 'px';
-                this.canvas.style.height = cssH + 'px';
-                this.canvas.width = Math.max(1, Math.floor(cssW * dpr));
-                this.canvas.height = Math.max(1, Math.floor(cssH * dpr));
+                // Keep CSS sizing driven by layout (100%), only adjust backing store.
+                // Round (not floor) to keep scale consistent and avoid sub-pixel drift.
+                this.canvas.style.width = '100%';
+                this.canvas.style.height = '100%';
+                this.canvas.width = Math.max(1, Math.round(cssW * dpr));
+                this.canvas.height = Math.max(1, Math.round(cssH * dpr));
 
                 this.view = this.view || { cssW: 0, cssH: 0, dpr: 1, scale: 1, ox: 0, oy: 0 };
                 this.view.cssW = cssW;
