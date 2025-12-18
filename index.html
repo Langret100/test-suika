@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>도형 합치기 게임</title>
+    <link rel="icon" href="favicon.ico">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Jua&display=swap');
         
@@ -932,7 +933,8 @@
 
                 // --- Fixed logical world size (기기/전체화면이 달라도 같은 화면/물리) ---
                 this.worldW = 360;
-                this.worldH = 560;
+                this.worldHDesign = 560;
+                this.worldH = this.worldHDesign;
                 // physics 기준 크기
                 this.width = this.worldW;
                 this.height = this.worldH;
@@ -1015,7 +1017,7 @@
                     const maxH = wrapRect ? Math.max(260, wrapRect.height - dropH - 10) : null;
 
                     const w = this.gameArea.getBoundingClientRect().width;
-                    const desiredH = w * (this.worldH / this.worldW);
+                    const desiredH = w * (this.worldHDesign / this.worldW);
                     const finalH = maxH ? Math.min(desiredH, maxH) : desiredH;
 
                     this.gameArea.style.height = Math.round(finalH) + 'px';
@@ -1036,10 +1038,21 @@
                 this.view.cssH = cssH;
                 this.view.dpr = dpr;
 
-                const scale = Math.min(cssW / this.worldW, cssH / this.worldH);
+                // Scale is locked to width so the CSS bowl outline and the physics world stay aligned.
+                const scale = cssW / this.worldW;
+                // If the available height is shorter than the design ratio, shrink the logical world height
+                // (no letterboxing). This prevents the bowl border and physics bounds from drifting.
+                const newWorldH = Math.max(240, Math.round(cssH / scale));
+                if (newWorldH !== this.worldH) {
+                    this.worldH = newWorldH;
+                    this.height = newWorldH;
+                    this.dangerYWorld = Math.max(40, this.worldH * 0.08);
+                    if (this.world) this.rebuildBounds();
+                }
+
                 this.view.scale = scale;
-                this.view.ox = (cssW - this.worldW * scale) / 2;
-                this.view.oy = (cssH - this.worldH * scale) / 2;
+                this.view.ox = 0;
+                this.view.oy = 0;
 
                 if (!this.dropX) this.dropX = this.worldW / 2;
                 this.updateDangerLine();
@@ -1155,48 +1168,63 @@
 
                 const wallOpts = { isStatic: true, friction: 0.8, restitution: 0.1, label: 'wall' };
 
-                // 곡선 바닥(시각적 컵 곡선과 맞추기)
-                // - bottomY가 너무 아래로 내려가면 도형이 화면 아래로 넘어가며 "경계 불일치"가 발생하므로 높이를 올림
                 const w = this.worldW;
                 const h = this.worldH;
 
-                // 곡선 바닥(물리 그릇)은 "월드 좌표" 기준으로 고정
-                // - bottomY는 월드 안쪽(h-2)으로 두어 아래로 살짝 넘어가는 현상/상대화면 바닥 잘림을 방지
-                const bottomY = h - 2;
-                const curveTopY = h * 0.6; // 곡선 시작점(비율 고정)
-                const curveDepth = bottomY - curveTopY;
-
+                // CSS 컵(border-radius: ... 50% / ... 40%)과 동일한 비율의 곡선 바닥
+                const inset = 8;
                 const centerX = w / 2;
-                const radiusX = w / 2 - 8;
-                const radiusY = curveDepth;
-                // U자형 곡선 바닥
-                const segments = 24;
-                for (let i = 0; i < segments; i++) {
-                    const angle1 = Math.PI - (i / segments) * Math.PI;
-                    const angle2 = Math.PI - ((i + 1) / segments) * Math.PI;
+                const radiusX = w / 2 - inset;
+                const curveTopY = h * 0.6;
+                const bottomY = h; // 월드의 바닥(캔버스 하단)과 일치
+                const radiusY = bottomY - curveTopY;
 
-                    const x1 = centerX + radiusX * Math.cos(angle1);
-                    const y1 = curveTopY + radiusY * Math.sin(angle1);
-                    const x2 = centerX + radiusX * Math.cos(angle2);
-                    const y2 = curveTopY + radiusY * Math.sin(angle2);
+                // 바닥 세그먼트는 두께의 절반만큼 "바깥쪽"으로 밀어
+                // 내부(게임 영역)에서 보이는 곡선 경계와 물리 충돌면이 맞도록 보정
+                const floorT = 14;
+                const segments = 28;
+                for (let i = 0; i < segments; i++) {
+                    const a1 = Math.PI - (i / segments) * Math.PI;
+                    const a2 = Math.PI - ((i + 1) / segments) * Math.PI;
+
+                    const x1 = centerX + radiusX * Math.cos(a1);
+                    const y1 = curveTopY + radiusY * Math.sin(a1);
+                    const x2 = centerX + radiusX * Math.cos(a2);
+                    const y2 = curveTopY + radiusY * Math.sin(a2);
 
                     const midX = (x1 + x2) / 2;
                     const midY = (y1 + y2) / 2;
-                    const angle = Math.atan2(y2 - y1, x2 - x1);
-                    const len = Math.sqrt((x2-x1)**2 + (y2-y1)**2) + 4;
+
+                    const dx = x2 - x1;
+                    const dy = y2 - y1;
+                    const segLen = Math.hypot(dx, dy) + 4;
+                    const ang = Math.atan2(dy, dx);
+
+                    // outward normal 결정(컵 바깥쪽)
+                    const invLen = 1 / (Math.hypot(dx, dy) || 1);
+                    const tx = dx * invLen;
+                    const ty = dy * invLen;
+                    let nx = -ty, ny = tx;
+                    const vx = midX - centerX;
+                    const vy = midY - curveTopY;
+                    if (nx * vx + ny * vy < 0) { nx = -nx; ny = -ny; }
+
+                    const offX = midX + nx * (floorT / 2);
+                    const offY = midY + ny * (floorT / 2);
 
                     Matter.Composite.add(this.world, Matter.Bodies.rectangle(
-                        midX, midY, len, 20,
-                        { ...wallOpts, angle: angle, label: 'floor' }
+                        offX, offY, segLen, floorT,
+                        { ...wallOpts, angle: ang, label: 'floor' }
                     ));
                 }
 
-                // 좌우 벽
+                // 좌우 벽: 내부 면이 x=0/w에 오도록 배치
+                const wallT = 24;
                 Matter.Composite.add(this.world, Matter.Bodies.rectangle(
-                    -12, curveTopY / 2, 30, curveTopY + 20, wallOpts
+                    -wallT / 2, curveTopY / 2, wallT, curveTopY + wallT, wallOpts
                 ));
                 Matter.Composite.add(this.world, Matter.Bodies.rectangle(
-                    w + 12, curveTopY / 2, 30, curveTopY + 20, wallOpts
+                    w + wallT / 2, curveTopY / 2, wallT, curveTopY + wallT, wallOpts
                 ));
             }
 
@@ -1963,16 +1991,6 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             const game = new ShapeGame();
-
-            // Autoplay policy:
-            // AudioContext는 사용자 제스처(클릭/터치/키입력) 이후에만 시작할 수 있습니다.
-            // 그래서 첫 입력 순간에 음악을 자동 시작합니다(콘솔 경고/에러 방지).
-            const startAudioOnce = () => {
-                if (game.soundInitialized) return;
-                try { game.sound.init(); game.sound.startMusic(); game.soundInitialized = true; } catch(e) {}
-            };
-            window.addEventListener('pointerdown', startAudioOnce, { once: true, passive: true });
-            window.addEventListener('keydown', startAudioOnce, { once: true });
 
             window.__shapeGame = game;
             window.dispatchEvent(new CustomEvent('shapeGameReady', { detail: { game } }));

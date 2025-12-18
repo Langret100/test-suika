@@ -269,39 +269,58 @@ export class MergeGame {
   // ---------------- internal ----------------
 
   _setupBounds(){
-    // 곡선 바닥을 단순 분할로 구성(원본 게임과 유사)
+    // 곡선 바닥/벽: CSS 컵(50%/40%) 비율과 맞추기
     const wallOpts = { isStatic: true, friction: 0.8, restitution: 0.1, label: "wall" };
-    const bottomY = this.height + 10;
-    const curveTopY = this.height * 0.6;
-    const curveDepth = bottomY - curveTopY;
 
-    const centerX = this.width / 2;
-    const radiusX = this.width / 2 - 8;
-    const radiusY = curveDepth;
+    const w = this.width;
+    const h = this.height;
 
-    const points = [];
-    const segments = 12;
-    for(let i=0;i<=segments;i++){
-      const t = i/segments;
-      const x = centerX - radiusX + 2*radiusX*t;
-      // ellipse: y = curveTopY + radiusY * (1 - sqrt(1 - ((x-centerX)/radiusX)^2))
-      const nx = (x-centerX) / radiusX;
-      const y = curveTopY + radiusY * (1 - Math.sqrt(Math.max(0, 1 - nx*nx)));
-      points.push({x,y});
-    }
-    // build floor segments
-    for(let i=0;i<points.length-1;i++){
-      const a = points[i], b = points[i+1];
-      const midX = (a.x+b.x)/2;
-      const midY = (a.y+b.y)/2;
-      const len = Math.hypot(b.x-a.x, b.y-a.y);
-      const angle = Math.atan2(b.y-a.y, b.x-a.x);
-      const seg = this.M.Bodies.rectangle(midX, midY, len, 22, { ...wallOpts, angle, label:"floor" });
+    const inset = 8;
+    const centerX = w / 2;
+    const radiusX = w / 2 - inset;
+    const curveTopY = h * 0.6;
+    const bottomY = h;
+    const radiusY = bottomY - curveTopY;
+
+    const floorT = 14;
+    const segments = 28;
+    for(let i=0;i<segments;i++){
+      const a1 = Math.PI - (i/segments)*Math.PI;
+      const a2 = Math.PI - ((i+1)/segments)*Math.PI;
+
+      const x1 = centerX + radiusX * Math.cos(a1);
+      const y1 = curveTopY + radiusY * Math.sin(a1);
+      const x2 = centerX + radiusX * Math.cos(a2);
+      const y2 = curveTopY + radiusY * Math.sin(a2);
+
+      const midX = (x1 + x2) / 2;
+      const midY = (y1 + y2) / 2;
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+
+      const segLen = Math.hypot(dx, dy) + 4;
+      const ang = Math.atan2(dy, dx);
+
+      const invLen = 1 / (Math.hypot(dx, dy) || 1);
+      const tx = dx * invLen;
+      const ty = dy * invLen;
+
+      let nx = -ty, ny = tx;
+      const vx = midX - centerX;
+      const vy = midY - curveTopY;
+      if(nx*vx + ny*vy < 0){ nx = -nx; ny = -ny; }
+
+      const offX = midX + nx * (floorT/2);
+      const offY = midY + ny * (floorT/2);
+
+      const seg = this.M.Bodies.rectangle(offX, offY, segLen, floorT, { ...wallOpts, angle: ang, label:"floor" });
       this.M.Composite.add(this.world, seg);
     }
-    // side walls
-    this.M.Composite.add(this.world, this.M.Bodies.rectangle(-12, curveTopY/2, 30, curveTopY+20, wallOpts));
-    this.M.Composite.add(this.world, this.M.Bodies.rectangle(this.width+12, curveTopY/2, 30, curveTopY+20, wallOpts));
+
+    // side walls (inner faces at x=0/w)
+    const wallT = 24;
+    this.M.Composite.add(this.world, this.M.Bodies.rectangle(-wallT/2, curveTopY/2, wallT, curveTopY + wallT, wallOpts));
+    this.M.Composite.add(this.world, this.M.Bodies.rectangle(w + wallT/2, curveTopY/2, wallT, curveTopY + wallT, wallOpts));
   }
 
   _randShapeIndex(){

@@ -231,7 +231,7 @@ function drawOpp(state){
   // --- Fit inside the preview canvas with padding (prevents bottom clipping)
   // A bit more padding to prevent the bowl bottom from being clipped in the preview
   // extra padding to avoid clipping the bowl stroke at the bottom on some devices
-  const pad = 14;
+  const pad = 18;
   const effW = state.w;
   const effH = state.h;
 
@@ -258,7 +258,7 @@ function drawOpp(state){
     if(size < 2) size = 2;
     // Rock(짱돌)은 1단계 size를 기반으로 불규칙 다각형을 만들기 때문에
     // 미리보기에서 stroke/형상이 실제보다 커 보이지 않도록 약간 축소합니다.
-    if(isRock) size *= 0.92;
+    if(isRock) size *= 0.85;
 
     oppCtx.save();
     oppCtx.translate(x,y);
@@ -285,7 +285,7 @@ function drawOppCup(ctx, cv, state, s, ox, oy){
   const centerX = w / 2;
   const radiusX = (w / 2) - inset;
   const curveTopY = h * 0.6;
-  const bottomY = h - 2; // fixed world cup bottom (matches main physics)
+  const bottomY = h; // cup bottom (matches main physics)
   const radiusY = bottomY - curveTopY;
 
   // danger line: DOM uses 35px from the top in the main UI
@@ -381,9 +381,9 @@ function drawRock(ctx, size){
   ctx.fillStyle = "#7f8c8d";
   ctx.strokeStyle = "#2d3436";
   // 상대 미리보기에서는 stroke가 두꺼우면 실제보다 커 보이므로 조금 얇게
-  ctx.lineWidth = Math.max(1, size * 0.14);
+  ctx.lineWidth = Math.max(1, size * 0.12);
 
-  const r = size * 0.9;
+  const r = size * 0.95;
   ctx.beginPath();
   for(let i=0;i<6;i++){
     const ang = (Math.PI*2*i)/6;
@@ -399,7 +399,7 @@ function drawRock(ctx, size){
 
   // x_x face
   ctx.strokeStyle = "#1f1f1f";
-  ctx.lineWidth = Math.max(1, size * 0.16);
+  ctx.lineWidth = Math.max(1, size * 0.12);
   const eg = size * 0.33;
   const ey = -size * 0.05;
   const cross = size * 0.14;
