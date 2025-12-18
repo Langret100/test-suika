@@ -29,7 +29,9 @@ function setStatus(t){
 
 function showNetOverlay({title, desc, seconds, canClose=true, canRetry=true, closeText, retryText, kind}={}){
   if(!ui.overlay) return;
-  if(kind) _overlayKind = kind;
+  // kind가 생략되면 이전 overlay kind가 남아 "매칭 취소" 동작으로 오인될 수 있어
+  // 명시되지 않으면 기본(null)로 리셋합니다.
+  _overlayKind = (kind === undefined) ? null : kind;
   if(ui.overlayTitle && typeof title === "string") ui.overlayTitle.textContent = title;
   if(ui.overlayDesc && typeof desc === "string") ui.overlayDesc.textContent = desc;
   if(ui.overlayTimer){
@@ -38,10 +40,12 @@ function showNetOverlay({title, desc, seconds, canClose=true, canRetry=true, clo
   if(ui.overlayRetry){
     ui.overlayRetry.style.display = canRetry ? "" : "none";
     if(typeof retryText === "string") ui.overlayRetry.textContent = retryText;
+    else ui.overlayRetry.textContent = "다시 매칭";
   }
   if(ui.overlayClose){
     ui.overlayClose.style.display = canClose ? "" : "none";
     if(typeof closeText === "string") ui.overlayClose.textContent = closeText;
+    else ui.overlayClose.textContent = (_overlayKind === "matching") ? "매칭 취소" : "닫기";
   }
   ui.overlay.classList.add("show");
   ui.overlay.setAttribute("aria-hidden", "false");
@@ -55,7 +59,16 @@ function hideNetOverlay(){
 }
 
 if(ui.overlayRetry){
-  ui.overlayRetry.addEventListener("click", ()=>location.reload());
+  ui.overlayRetry.addEventListener("click", ()=>{
+    // 결과 화면/매칭 실패 등에서 "다시 매칭"은 새로고침이 아니라
+    // 현재 세션을 정리하고 같은 탭에서 곧바로 재매칭을 시작합니다.
+    try{ cancelMatching("retry", { silent:true }); }catch{}
+    try{ window.__shapeGame?.restart?.(); }catch{}
+    try{ resolved = false; }catch{}
+    try{ startArmed = false; }catch{}
+    try{ hideNetOverlay(); }catch{}
+    try{ startMatching(); }catch{}
+  });
 }
 if(ui.overlayClose){
   ui.overlayClose.addEventListener("click", ()=>{ if(_overlayKind==="matching" || mode==="matching"){ cancelMatching("user"); } else { hideNetOverlay(); } });
@@ -100,9 +113,10 @@ function beginCountdown(seconds){
 }
 
 function startMatching(){
+  // 온라인/매칭 중 상태에서도 "다시 매칭"을 누르면
+  // 새로고침 없이 현재 세션을 정리하고 재매칭을 시작합니다.
   if(mode !== "offline"){
-    location.reload();
-    return;
+    try{ cancelMatching("restart", { silent:true }); }catch{}
   }
   if(!game){
     showNetOverlay({ title: "로딩 중…", desc: "게임 준비가 끝난 뒤 다시 눌러주세요.", canClose: true, canRetry: false });
