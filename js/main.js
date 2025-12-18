@@ -206,22 +206,31 @@ function drawOpp(state){
   if(!state || !state.w || !state.h) return;
 
   const shapes = window.SHAPES || [];
-  const scaleX = cv.width / state.w;
-  const scaleY = cv.height / state.h;
-  const scale = Math.min(scaleX, scaleY);
 
-  // Draw opponent bowl outline + danger line (so the curved bottom is visible)
-  drawOppCup(oppCtx, cv, state, scaleX, scaleY);
+  // --- Fit inside the preview canvas with padding (prevents bottom clipping)
+  const pad = 6;
+  const effW = state.w;
+  const effH = state.h + 8; // allow a tiny extra space for the cup bottom (bottomY offset)
+
+  const sx = (cv.width - pad*2) / effW;
+  const sy = (cv.height - pad*2) / effH;
+  const s = Math.min(sx, sy);
+
+  const ox = (cv.width - effW * s) / 2;
+  const oy = (cv.height - effH * s) / 2;
+
+  // Draw opponent bowl outline + danger line (same geometry as the real physics cup)
+  drawOppCup(oppCtx, cv, state, s, ox, oy);
 
   if(!state.bodies) return;
 
   for(const b of state.bodies){
-    const x = b.x * scaleX;
-    const y = b.y * scaleY;
+    const x = b.x * s + ox;
+    const y = b.y * s + oy;
     const a = b.a || 0;
     const isRock = !!b.r;
 
-    let size = (shapes[b.i]?.size || (shapes[0]?.size || 14)) * scale;
+    let size = (shapes[b.i]?.size || (shapes[0]?.size || 14)) * s;
     if(size < 2) size = 2;
     if(isRock) size *= 2;
 
@@ -241,29 +250,29 @@ function drawOpp(state){
   }
 }
 
-function drawOppCup(ctx, cv, state, scaleX, scaleY){
-  // Match the real in-game physics cup (same paramization as ShapeGame.setupPhysics in index.html)
-  // so that shapes do NOT appear to stack "under" the bowl curve.
+function drawOppCup(ctx, cv, state, s, ox, oy){
+  // Same parameterization as ShapeGame.setupPhysics(index.html).
+  // Plus: draw inside padding/letterbox so the bottom line doesn't get clipped in the preview.
   const w = state.w;
   const h = state.h;
   const inset = 8;
   const centerX = w / 2;
   const radiusX = (w / 2) - inset;
   const curveTopY = h * 0.6;
-  const bottomY = h + 10; // floor segments are slightly below the visible canvas
+  const bottomY = h + 4; // keep consistent with the main physics cup
   const radiusY = bottomY - curveTopY;
 
-  // overflow line: the main UI uses a fixed 35px from the top
-  const padX = inset * scaleX;
-  const dangerY = 35 * scaleY;
+  // danger line: DOM uses 35px from the top in the main UI
+  const padX = inset * s;
+  const dangerY = 35 * s;
 
   ctx.save();
   ctx.strokeStyle = "rgba(255,107,107,0.6)";
   ctx.lineWidth = 2;
   ctx.setLineDash([6,6]);
   ctx.beginPath();
-  ctx.moveTo(padX, dangerY);
-  ctx.lineTo(cv.width - padX, dangerY);
+  ctx.moveTo(ox + padX, oy + dangerY);
+  ctx.lineTo(ox + (w * s) - padX, oy + dangerY);
   ctx.stroke();
   ctx.setLineDash([]);
 
@@ -277,18 +286,18 @@ function drawOppCup(ctx, cv, state, scaleX, scaleY){
   ctx.lineCap = "round";
 
   ctx.beginPath();
-  ctx.moveTo(leftX * scaleX, 0);
-  ctx.lineTo(leftX * scaleX, curveTopY * scaleY);
+  ctx.moveTo(ox + leftX * s, oy + 0);
+  ctx.lineTo(ox + leftX * s, oy + curveTopY * s);
 
   const segments = 24;
   for(let i=0;i<=segments;i++){
     const ang = Math.PI - (i / segments) * Math.PI;
     const x = centerX + radiusX * Math.cos(ang);
     const y = curveTopY + radiusY * Math.sin(ang);
-    ctx.lineTo(x * scaleX, y * scaleY);
+    ctx.lineTo(ox + x * s, oy + y * s);
   }
 
-  ctx.lineTo(rightX * scaleX, 0);
+  ctx.lineTo(ox + rightX * s, oy + 0);
   ctx.stroke();
   ctx.restore();
 }

@@ -909,12 +909,19 @@
 
             setupCanvas() {
                 const rect = this.gameArea.getBoundingClientRect();
+
                 this.canvas.width = rect.width;
                 this.canvas.height = rect.height;
                 this.width = rect.width;
                 this.height = rect.height;
+
                 this.dropX = this.width / 2;
                 this.updateDangerLine();
+
+                // 리사이즈/전체화면 시 물리 경계도 함께 갱신(그릇 경계 불일치 방지)
+                if (this.engine && this.world && typeof this.rebuildBounds === 'function') {
+                    this.rebuildBounds();
+                }
             }
 
             updateDangerLine() {
@@ -978,39 +985,63 @@
                 this.world = this.engine.world;
                 this.engine.world.gravity.y = 1.0;
 
+                // 충돌 이벤트는 엔진당 1회만 등록(리사이즈/전체화면 시 중복 호출 방지)
+                if (!this._collisionBound) {
+                    Matter.Events.on(this.engine, 'collisionStart', (e) => {
+                        e.pairs.forEach(pair => this.handleCollision(pair.bodyA, pair.bodyB));
+                    });
+                    this._collisionBound = true;
+                }
+
+                // 현재 캔버스 크기에 맞춰 그릇(바닥/벽) 경계를 구성
+                this.rebuildBounds();
+            }
+
+            rebuildBounds() {
+                if (!this.world) return;
+
+                // 기존 정적 바디(바닥/벽) 제거 후 재생성: 화면 리사이즈/전체화면에서도 물리 경계가 항상 일치하도록
+                const all = Matter.Composite.allBodies(this.world);
+                for (const b of all) {
+                    if (b.isStatic) {
+                        try { Matter.Composite.remove(this.world, b); } catch(e) {}
+                    }
+                }
+
                 const wallOpts = { isStatic: true, friction: 0.8, restitution: 0.1, label: 'wall' };
-                
-                // 곡선 바닥 - 화면 끝까지 내림
-                const bottomY = this.height + 10;  // 화면 끝 아래로
-                const curveTopY = this.height * 0.6;  // 곡선 시작점
+
+                // 곡선 바닥(시각적 컵 곡선과 맞추기)
+                // - bottomY가 너무 아래로 내려가면 도형이 화면 아래로 넘어가며 "경계 불일치"가 발생하므로 높이를 올림
+                const bottomY = this.height + 4;     // (기존 +10 → +4) 아래 잘림/넘어감 방지
+                const curveTopY = this.height * 0.6; // 곡선 시작점(시각적 border-radius와 동일 비율)
                 const curveDepth = bottomY - curveTopY;
-                
+
                 const centerX = this.width / 2;
                 const radiusX = this.width / 2 - 8;
                 const radiusY = curveDepth;
-                
+
                 // U자형 곡선 바닥
                 const segments = 24;
                 for (let i = 0; i < segments; i++) {
                     const angle1 = Math.PI - (i / segments) * Math.PI;
                     const angle2 = Math.PI - ((i + 1) / segments) * Math.PI;
-                    
+
                     const x1 = centerX + radiusX * Math.cos(angle1);
                     const y1 = curveTopY + radiusY * Math.sin(angle1);
                     const x2 = centerX + radiusX * Math.cos(angle2);
                     const y2 = curveTopY + radiusY * Math.sin(angle2);
-                    
+
                     const midX = (x1 + x2) / 2;
                     const midY = (y1 + y2) / 2;
                     const angle = Math.atan2(y2 - y1, x2 - x1);
                     const len = Math.sqrt((x2-x1)**2 + (y2-y1)**2) + 4;
-                    
+
                     Matter.Composite.add(this.world, Matter.Bodies.rectangle(
                         midX, midY, len, 20,
                         { ...wallOpts, angle: angle, label: 'floor' }
                     ));
                 }
-                
+
                 // 좌우 벽
                 Matter.Composite.add(this.world, Matter.Bodies.rectangle(
                     -12, curveTopY / 2, 30, curveTopY + 20, wallOpts
@@ -1018,10 +1049,6 @@
                 Matter.Composite.add(this.world, Matter.Bodies.rectangle(
                     this.width + 12, curveTopY / 2, 30, curveTopY + 20, wallOpts
                 ));
-
-                Matter.Events.on(this.engine, 'collisionStart', (e) => {
-                    e.pairs.forEach(pair => this.handleCollision(pair.bodyA, pair.bodyB));
-                });
             }
 
             setupEvents() {
