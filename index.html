@@ -204,13 +204,15 @@
         .current-shape {
             position: absolute;
             top: 5px;
-            left: 50%;
-            transform: translateX(-50%);
+            left: 0;
             z-index: 20;
             pointer-events: none;
             transition: none;
-            will-change: left;
-}
+            /* transform 기반 이동(레이아웃 리플로우 최소화) */
+            transform: translate3d(0px,0,0) translateX(-50%);
+            will-change: transform;
+            contain: layout paint;
+        }
         
         .drop-zone-touch {
             position: absolute;
@@ -815,19 +817,90 @@
                 if (!this.initialized || this.musicPlaying) return;
                 this.resume();
                 this.musicPlaying = true;
+
+                // 모바일에서 드문드문 끊기는 현상(메인스레드 부하/GC)을 줄이기 위해
+                // 배경음은 "노드 재생성" 대신 재사용 노드 + 미리 스케줄링 방식으로 변경
+                const dest = this.musicGain || this.audioContext.destination;
+
+                if (!this._music) {
+                    const o1 = this.audioContext.createOscillator();
+                    const g1 = this.audioContext.createGain();
+                    o1.type = 'sine';
+                    g1.gain.value = 0.0001;
+                    o1.connect(g1);
+                    g1.connect(dest);
+
+                    const o2 = this.audioContext.createOscillator();
+                    const g2 = this.audioContext.createGain();
+                    o2.type = 'triangle';
+                    g2.gain.value = 0.0001;
+                    o2.connect(g2);
+                    g2.connect(dest);
+
+                    try { o1.start(); } catch(e) {}
+                    try { o2.start(); } catch(e) {}
+
+                    this._music = { o1, g1, o2, g2, nextTime: this.audioContext.currentTime + 0.06, idx: 0 };
+                }
+
                 const melody = [523, 587, 659, 587, 523, 659, 587, 523, 659, 698, 784, 698, 659, 587, 523, 587];
-                let i = 0;
-                const play = () => {
-                    if (!this.musicPlaying) return;
-                    this.playTone(melody[i], 0.25, 'sine', 0.1, this.musicGain);
-                    if (i % 4 === 0) this.playTone(melody[i] * 1.25, 0.25, 'triangle', 0.05, this.musicGain);
-                    i = (i + 1) % melody.length;
+                const step = 0.28;           // 한 음 간격(초)
+                const ahead = 1.2;           // 미리 스케줄(초)
+                const envDur = 0.22;
+
+                const schedule = () => {
+                    if (!this.musicPlaying || !this._music) return;
+                    const m = this._music;
+                    const now = this.audioContext.currentTime;
+
+                    while (m.nextTime < now + ahead) {
+                        const f = melody[m.idx];
+
+                        // main voice
+                        try {
+                            m.o1.frequency.setValueAtTime(f, m.nextTime);
+                            m.g1.gain.cancelScheduledValues(m.nextTime);
+                            m.g1.gain.setValueAtTime(0.0001, m.nextTime);
+                            m.g1.gain.linearRampToValueAtTime(0.085, m.nextTime + 0.01);
+                            m.g1.gain.exponentialRampToValueAtTime(0.0001, m.nextTime + envDur);
+                        } catch(e) {}
+
+                        // accent (every 4)
+                        if (m.idx % 4 === 0) {
+                            try {
+                                m.o2.frequency.setValueAtTime(f * 1.25, m.nextTime);
+                                m.g2.gain.cancelScheduledValues(m.nextTime);
+                                m.g2.gain.setValueAtTime(0.0001, m.nextTime);
+                                m.g2.gain.linearRampToValueAtTime(0.045, m.nextTime + 0.01);
+                                m.g2.gain.exponentialRampToValueAtTime(0.0001, m.nextTime + envDur);
+                            } catch(e) {}
+                        }
+
+                        m.idx = (m.idx + 1) % melody.length;
+                        m.nextTime += step;
+                    }
                 };
-                play();
-                this.musicInterval = setInterval(play, 280);
+
+                schedule();
+                this.musicInterval = setInterval(schedule, 400);
             }
 
-            stopMusic() { this.musicPlaying = false; if (this.musicInterval) { clearInterval(this.musicInterval); this.musicInterval = null; } }
+            stopMusic() {
+                this.musicPlaying = false;
+                if (this.musicInterval) { clearInterval(this.musicInterval); this.musicInterval = null; }
+                // 재사용 오실레이터는 유지하되, 게인을 0에 가깝게 내려 CPU/클릭 잡음 최소화
+                if (this._music) {
+                    try {
+                        const t = this.audioContext.currentTime;
+                        this._music.g1.gain.cancelScheduledValues(t);
+                        this._music.g2.gain.cancelScheduledValues(t);
+                        this._music.g1.gain.setValueAtTime(0.0001, t);
+                        this._music.g2.gain.setValueAtTime(0.0001, t);
+                        this._music.nextTime = t + 0.06;
+                    } catch(e) {}
+                }
+            }
+
             toggleMusic() { if (this.musicPlaying) { this.stopMusic(); return false; } else { this.startMusic(); return true; } }
             playDrop() { this.playTone(880, 0.08, 'sine', 0.2); setTimeout(() => this.playTone(660, 0.06, 'sine', 0.15), 40); }
             playLand() { this.playTone(180, 0.1, 'sine', 0.2); setTimeout(() => this.playTone(120, 0.12, 'triangle', 0.12), 40); }
@@ -844,7 +917,20 @@
                 this.gameArea = document.getElementById('game-area');
                 this.wrapper = document.querySelector('.game-area-wrapper');
                 this.sound = new SoundSystem();
-                
+
+                // --- Fixed logical world size (기기/전체화면이 달라도 같은 화면/물리) ---
+                this.worldW = 360;
+                this.worldH = 560;
+                // physics 기준 크기
+                this.width = this.worldW;
+                this.height = this.worldH;
+                // view(캔버스) 변환 정보
+                this.view = { cssW: 0, cssH: 0, dpr: 1, scale: 1, ox: 0, oy: 0 };
+                // danger line is in world coordinates
+                this.dangerYWorld = Math.max(40, this.worldH * 0.08);
+                // drag mapping cache (drop-zone -> world)
+                this._dropMap = { rect: null, s: 1, ox: 0, left: 0, w: 1 };
+
                 this.score = 0;
                 this.currentShapeIndex = 0;
                 this.nextShapeIndex = 0;
@@ -909,26 +995,66 @@
             }
 
             setupCanvas() {
+                // game-area 높이를 "고정 비율"로 맞춰, 기기/전체화면에서도 그릇 깊이가 달라지지 않게 함
+                try {
+                    const dropArea = document.getElementById('drop-area');
+                    const wrapRect = this.wrapper ? this.wrapper.getBoundingClientRect() : null;
+                    const dropH = dropArea ? dropArea.getBoundingClientRect().height : 0;
+                    const maxH = wrapRect ? Math.max(260, wrapRect.height - dropH - 10) : null;
+
+                    const w = this.gameArea.getBoundingClientRect().width;
+                    const desiredH = w * (this.worldH / this.worldW);
+                    const finalH = maxH ? Math.min(desiredH, maxH) : desiredH;
+
+                    this.gameArea.style.height = Math.round(finalH) + 'px';
+                } catch(e) {}
+
                 const rect = this.gameArea.getBoundingClientRect();
+                const cssW = rect.width;
+                const cssH = rect.height;
 
-                this.canvas.width = rect.width;
-                this.canvas.height = rect.height;
-                this.width = rect.width;
-                this.height = rect.height;
+                const dpr = Math.min(2, window.devicePixelRatio || 1);
+                this.canvas.style.width = cssW + 'px';
+                this.canvas.style.height = cssH + 'px';
+                this.canvas.width = Math.max(1, Math.floor(cssW * dpr));
+                this.canvas.height = Math.max(1, Math.floor(cssH * dpr));
 
-                this.dropX = this.width / 2;
+                this.view = this.view || { cssW: 0, cssH: 0, dpr: 1, scale: 1, ox: 0, oy: 0 };
+                this.view.cssW = cssW;
+                this.view.cssH = cssH;
+                this.view.dpr = dpr;
+
+                const scale = Math.min(cssW / this.worldW, cssH / this.worldH);
+                this.view.scale = scale;
+                this.view.ox = (cssW - this.worldW * scale) / 2;
+                this.view.oy = (cssH - this.worldH * scale) / 2;
+
+                if (!this.dropX) this.dropX = this.worldW / 2;
                 this.updateDangerLine();
-
-                // 리사이즈/전체화면 시 물리 경계도 함께 갱신(그릇 경계 불일치 방지)
-                if (this.engine && this.world && typeof this.rebuildBounds === 'function') {
-                    this.rebuildBounds();
-                }
+                this.updateCurrentShapeUI();
             }
 
             updateDangerLine() {
                 const line = this.gameArea ? this.gameArea.querySelector('.danger-line') : null;
-                // canvas 좌표계(픽셀) 기준 위험선 Y 위치를 DOM에서 가져옴
-                this.dangerY = line ? (line.offsetTop + (line.offsetHeight || 0) / 2) : 40;
+                this.dangerY = this.dangerYWorld;
+                if (line && this.view) {
+                    line.style.top = Math.round(this.view.oy + this.dangerYWorld * this.view.scale) + 'px';
+                }
+            }
+
+
+            updateCurrentShapeUI() {
+                const el = document.getElementById('current-shape');
+                const dropArea = document.getElementById('drop-area');
+                if (!el || !dropArea) return;
+
+                const rect = dropArea.getBoundingClientRect();
+                const w = Math.max(1, rect.width);
+                const s = w / this.worldW;
+                const ox = (w - this.worldW * s) / 2;
+
+                const xPx = ox + this.dropX * s;
+                el.style.transform = `translate3d(${xPx}px,0,0) translateX(-50%)`;
             }
 
             createShapeProgression() {
@@ -1019,14 +1145,18 @@
 
                 // 곡선 바닥(시각적 컵 곡선과 맞추기)
                 // - bottomY가 너무 아래로 내려가면 도형이 화면 아래로 넘어가며 "경계 불일치"가 발생하므로 높이를 올림
-                const bottomY = this.height + 4;     // (기존 +10 → +4) 아래 잘림/넘어감 방지
-                const curveTopY = this.height * 0.6; // 곡선 시작점(시각적 border-radius와 동일 비율)
+                const w = this.worldW;
+                const h = this.worldH;
+
+                // 곡선 바닥(물리 그릇)은 "월드 좌표" 기준으로 고정
+                // - bottomY는 월드 안쪽(h-2)으로 두어 아래로 살짝 넘어가는 현상/상대화면 바닥 잘림을 방지
+                const bottomY = h - 2;
+                const curveTopY = h * 0.6; // 곡선 시작점(비율 고정)
                 const curveDepth = bottomY - curveTopY;
 
-                const centerX = this.width / 2;
-                const radiusX = this.width / 2 - 8;
+                const centerX = w / 2;
+                const radiusX = w / 2 - 8;
                 const radiusY = curveDepth;
-
                 // U자형 곡선 바닥
                 const segments = 24;
                 for (let i = 0; i < segments; i++) {
@@ -1054,153 +1184,148 @@
                     -12, curveTopY / 2, 30, curveTopY + 20, wallOpts
                 ));
                 Matter.Composite.add(this.world, Matter.Bodies.rectangle(
-                    this.width + 12, curveTopY / 2, 30, curveTopY + 20, wallOpts
+                    w + 12, curveTopY / 2, 30, curveTopY + 20, wallOpts
                 ));
             }
 
             setupEvents() {
                 const dropZone = document.getElementById('drop-zone');
-                // 입력(모바일/데스크톱 공통): pointer events + pointer capture
-                // - coalesced events를 사용해(지원 브라우저) 손가락을 더 "즉시" 따라오게 함
-                // - drop-zone 기준 rect로 좌표 변환(전체화면/모바일에서 offset/scale 오차 감소)
-                let dragging = false;
-                const currentShapeEl = document.getElementById('current-shape');
+                const restartBtn = document.getElementById('restart-btn');
+                const shakeBtn = document.getElementById('shake-btn');
+                const musicBtn = document.getElementById('music-btn');
+                const fullBtn = document.getElementById('fullscreen-btn');
+                const gameContainer = document.getElementById('game-container');
 
-                dropZone.addEventListener('pointerdown', (e) => {
-                    if (e.cancelable) e.preventDefault();
+                if (dropZone) dropZone.style.touchAction = 'none';
+
+                if (restartBtn) restartBtn.addEventListener('click', () => this.restart());
+                if (shakeBtn) shakeBtn.addEventListener('click', () => this.shakeCup && this.shakeCup());
+                if (musicBtn) musicBtn.addEventListener('click', () => {
                     this.initSoundOnInteraction();
-                    dragging = true;
-                    try { dropZone.setPointerCapture(e.pointerId); } catch(err) {}
-                    const rect = dropZone.getBoundingClientRect();
-                    this.updateDropPosition(e.clientX, rect);
-                }, { passive: false });
+                    this.musicEnabled = this.sound.toggleMusic();
+                    musicBtn.textContent = this.musicEnabled ? '🎶' : '🎵';
+                });
 
-                dropZone.addEventListener('pointermove', (e) => {
-                    if (!dragging) return;
+                // Fullscreen
+                if (fullBtn && gameContainer) {
+                    fullBtn.addEventListener('click', async () => {
+                        try {
+                            if (!document.fullscreenElement) await gameContainer.requestFullscreen();
+                            else await document.exitFullscreen();
+                        } catch(e) {}
+                        setTimeout(() => this.setupCanvas(), 80);
+                    });
+                }
+
+                // Pointer controls (drag to move, release to drop)
+                let dragging = false;
+                let activeId = null;
+
+                const refreshMap = () => {
+                    if (!dropZone) return;
+                    const r = dropZone.getBoundingClientRect();
+                    const w = Math.max(1, r.width);
+                    const s = w / this.worldW;
+                    const ox = (w - this.worldW * s) / 2;
+                    this._dropMap = { left: r.left, w, s, ox };
+                };
+
+                const onMoveClientX = (clientX) => {
+                    // dropZone가 스크롤/주소창 변화로 움직였을 수 있어, 드래그 시작/리사이즈 때만 맵 갱신
+                    this.updateDropPosition(clientX);
+                };
+
+                const moveHandler = (e) => {
+                    if (!dragging || e.pointerId !== activeId) return;
                     if (e.cancelable) e.preventDefault();
-                    const rect = dropZone.getBoundingClientRect();
-                    // 더 촘촘한 이벤트가 있으면 마지막(coalesced) 좌표를 사용
                     const evs = (typeof e.getCoalescedEvents === 'function') ? e.getCoalescedEvents() : null;
                     const last = (evs && evs.length) ? evs[evs.length - 1] : e;
-                    this.updateDropPosition(last.clientX, rect);
-                }, { passive: false });
+                    onMoveClientX(last.clientX);
+                };
 
-                dropZone.addEventListener('pointerup', (e) => {
-                    if (!dragging) return;
-                    if (e.cancelable) e.preventDefault();
-                    dragging = false;
-                    try { dropZone.releasePointerCapture(e.pointerId); } catch(err) {}
-                    this.dropShape();
-                }, { passive: false });
+                if (dropZone) {
+                    dropZone.addEventListener('pointerdown', (e) => {
+                        if (e.cancelable) e.preventDefault();
+                        this.initSoundOnInteraction();
+                        dragging = true;
+                        activeId = e.pointerId;
+                        try { dropZone.setPointerCapture(e.pointerId); } catch(err) {}
+                        refreshMap();
+                        onMoveClientX(e.clientX);
+                    }, { passive: false });
 
-                dropZone.addEventListener('pointercancel', () => { dragging = false; }, { passive: true });
+                    dropZone.addEventListener('pointermove', moveHandler, { passive: false });
+                    // Chrome/Android: 더 촘촘한 업데이트(가능할 때만)
+                    dropZone.addEventListener('pointerrawupdate', moveHandler, { passive: false });
 
-                document.getElementById('fullscreen-btn').addEventListener('click', () => { this.initSoundOnInteraction(); this.toggleFullscreen(); });
-                document.getElementById('music-btn').addEventListener('click', () => {
-                    this.initSoundOnInteraction();
-                    const playing = this.sound.toggleMusic();
-                    this.musicEnabled = playing;
-                    document.getElementById('music-btn').textContent = playing ? '🎶' : '🎵';
-                });
-                document.getElementById('shake-btn').addEventListener('click', () => { this.initSoundOnInteraction(); this.shakeContainer(); });
-                document.getElementById('restart-btn').addEventListener('click', () => { this.initSoundOnInteraction(); this.restart(); });
+                    dropZone.addEventListener('pointerup', (e) => {
+                        if (e.pointerId !== activeId) return;
+                        if (e.cancelable) e.preventDefault();
+                        dragging = false;
+                        activeId = null;
+                        try { dropZone.releasePointerCapture(e.pointerId); } catch(err) {}
+                        this.dropShape();
+                    }, { passive: false });
 
-                window.addEventListener('resize', () => setTimeout(() => this.setupCanvas(), 100));
-                document.addEventListener('fullscreenchange', () => setTimeout(() => this.setupCanvas(), 100));
-            }
-
-            shakeContainer() {
-                if (this.shakeRemaining <= 0 || this.isGameOver) return;
-                this.shakeRemaining--;
-                this.updateShakeButton();
-                this.sound.playShake();
-                this.gameArea.classList.add('shaking');
-                setTimeout(() => this.gameArea.classList.remove('shaking'), 400);
-                this.bodies.forEach(s => {
-                    Matter.Body.applyForce(s.body, s.body.position, { x: (Math.random()-0.5)*0.04, y: -0.02-Math.random()*0.02 });
-                    this.setExpression(s.id, EXPRESSIONS.SURPRISED, 800);
-                });
-            }
-
-            updateShakeButton() {
-                document.getElementById('shake-count').textContent = `X${this.shakeRemaining}`;
-                document.getElementById('shake-btn').disabled = this.shakeRemaining <= 0;
-            }
-
-            // ---- Auto-drop: 3s idle -> warning + 3-2-1 -> auto drop ----
-            resetAutoDropTimer(){
-                this._spawnTs = Date.now();
-                this._autoWarnActive = false;
-                this._autoCountdown = 0;
-                if(this._autoTimer){ try{ clearInterval(this._autoTimer); }catch{} this._autoTimer = null; }
-                if(this.autoWarnEl){
-                    this.autoWarnEl.classList.remove('show');
-                    this.autoWarnEl.setAttribute('aria-hidden','true');
+                    dropZone.addEventListener('pointercancel', (e) => {
+                        if (e.pointerId !== activeId) return;
+                        dragging = false;
+                        activeId = null;
+                        try { dropZone.releasePointerCapture(e.pointerId); } catch(err) {}
+                    }, { passive: true });
                 }
-            }
 
-            startAutoDropCountdown(){
-                if(this._autoWarnActive || this.isGameOver) return;
-                this._autoWarnActive = true;
-                this._autoCountdown = 3;
-                if(this.autoCountEl) this.autoCountEl.textContent = String(this._autoCountdown);
-                if(this.autoWarnEl){
-                    this.autoWarnEl.classList.add('show');
-                    this.autoWarnEl.setAttribute('aria-hidden','false');
-                }
-                if(this._autoTimer){ try{ clearInterval(this._autoTimer); }catch{} }
-                this._autoTimer = setInterval(()=>{
-                    if(this.isGameOver){ this.resetAutoDropTimer(); return; }
-                    // If player already dropped, stop
-                    if(!this.canDrop){ this.resetAutoDropTimer(); return; }
-
-                    this._autoCountdown -= 1;
-                    if(this._autoCountdown <= 0){
-                        this.resetAutoDropTimer();
-                        // Force drop (same as click)
+                // Keyboard: Space to drop (force)
+                window.addEventListener('keydown', (e) => {
+                    if (e.code === 'Space' || e.key === ' ') {
+                        if (e.cancelable) e.preventDefault();
                         this.dropShape(true);
-                        return;
                     }
-                    if(this.autoCountEl) this.autoCountEl.textContent = String(this._autoCountdown);
-                }, 1000);
+                }, { passive: false });
+
+                // Resize / viewport changes -> only rescale view (world is fixed)
+                const onResize = () => {
+                    this._dropMap = { rect: null, s: 1, ox: 0, left: 0, w: 1 };
+                    setTimeout(() => this.setupCanvas(), 80);
+                };
+                window.addEventListener('resize', onResize);
+                window.addEventListener('orientationchange', onResize);
+                if (window.visualViewport) {
+                    window.visualViewport.addEventListener('resize', onResize);
+                    window.visualViewport.addEventListener('scroll', onResize);
+                }
+                document.addEventListener('fullscreenchange', onResize);
+                document.addEventListener('webkitfullscreenchange', onResize);
             }
 
-            tickAutoDrop(){
-                if(this.isGameOver) return;
-                if(!this.canDrop) return; // cooldown while dropping
-                if(this._autoWarnActive) return; // countdown in progress
-                const elapsed = Date.now() - (this._spawnTs || Date.now());
-                if(elapsed >= 3000){
-                    this.startAutoDropCountdown();
+            updateDropPosition(clientX) {
+                // pointermove마다 layout 측정(getBoundingClientRect)을 하지 않고,
+                // pointerdown 때 캐시한 맵을 사용해 끊김/지연을 줄임
+                let m = this._dropMap;
+                if (!m || !m.w) {
+                    const dz = document.getElementById('drop-zone');
+                    if (!dz) return;
+                    const r = dz.getBoundingClientRect();
+                    const w = Math.max(1, r.width);
+                    const s = w / this.worldW;
+                    const ox = (w - this.worldW * s) / 2;
+                    this._dropMap = m = { left: r.left, w, s, ox };
+                }
+
+                const localX = clientX - m.left;
+                const x = (localX - m.ox) / m.s;
+                const size = SHAPES[this.currentShapeIndex].size;
+                this.dropX = Math.max(size + 10, Math.min(this.worldW - size - 10, x));
+
+                // current-shape는 transform으로 이동(레이아웃 비용↓)
+                const el = document.getElementById('current-shape');
+                if (el) {
+                    const xPx = m.ox + this.dropX * m.s;
+                    el.style.transform = `translate3d(${xPx}px,0,0) translateX(-50%)`;
                 }
             }
 
-            toggleFullscreen() {
-                const c = document.getElementById('game-container');
-                if (!document.fullscreenElement) (c.requestFullscreen || c.webkitRequestFullscreen || c.msRequestFullscreen).call(c);
-                else (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-            }
-
-            updateDropPosition(clientX, rectOverride=null) {
-                const rect = rectOverride || document.getElementById('drop-zone').getBoundingClientRect();
-                const size = SHAPES[this.currentShapeIndex].size;
-
-                // drop-zone(입력 영역)과 캔버스(물리 영역) 너비가 달라질 수 있음(모바일/전체화면)
-                // -> 입력 좌표를 캔버스 좌표로 스케일해 "즉시 따라오는" 느낌을 강화
-                const inputW = Math.max(1, rect.width || this.width);
-                const scale = this.width / inputW;
-
-                const localX = (clientX - rect.left);
-                const x = localX * scale;
-
-                this.dropX = Math.max(size + 10, Math.min(this.width - size - 10, x));
-
-                // current-shape는 drop-area 내부 기준으로 표시되므로 역스케일로 표시(레이아웃/리사이즈에도 일관)
-                const leftPx = this.dropX / scale;
-                const el = document.getElementById('current-shape');
-                if(el) el.style.left = leftPx + 'px';
-            }
-
+            
             generateNextShape() {
                 this.currentShapeIndex = this.nextShapeIndex;
                 // 같은 도형이 2연속으로 나오지 않도록 다음 도형 선택(기본 풀: 0~3)
@@ -1215,20 +1340,15 @@
                 this.updatePreview();
                 this.resetAutoDropTimer();
             }
-
             updatePreview() {
-                document.getElementById('current-shape').innerHTML = this.createShapeSVG(this.currentShapeIndex, SHAPES[this.currentShapeIndex].size);
-                // drop-area와 캔버스 너비 차이를 반영해 표시 위치도 맞춤
-                try{
-                    const rect = document.getElementById('drop-area').getBoundingClientRect();
-                    const dropW = Math.max(1, rect.width || this.width);
-                    const scale = this.width / dropW;
-                    document.getElementById('current-shape').style.left = (this.dropX / scale) + 'px';
-                }catch{
-                    document.getElementById('current-shape').style.left = this.dropX + 'px';
-                }
-                document.getElementById('next-shape').innerHTML = this.createShapeSVG(this.nextShapeIndex, 14);
+                const cur = document.getElementById('current-shape');
+                const nxt = document.getElementById('next-shape');
+                if (cur) cur.innerHTML = this.createShapeSVG(this.currentShapeIndex);
+                if (nxt) nxt.innerHTML = this.createShapeSVG(this.nextShapeIndex, true);
+                this.updateCurrentShapeUI();
             }
+
+            
 
             createShapeSVG(index, size) {
                 const shape = SHAPES[index];
@@ -1344,8 +1464,8 @@
 
             getNetState() {
                 return {
-                    w: this.width,
-                    h: this.height,
+                    w: this.worldW,
+                    h: this.worldH,
                     score: this.score,
                     over: this.isGameOver ? 1 : 0,
                     bodies: this.bodies.map(s => ({
@@ -1562,17 +1682,27 @@
             }
 
             render() {
-                this.ctx.clearRect(0, 0, this.width, this.height);
+                const ctx = this.ctx;
+                const cv = this.canvas;
+                const v = this.view || { dpr: 1, scale: 1, ox: 0, oy: 0 };
+
+                // reset & clear in canvas pixel space
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.clearRect(0, 0, cv.width, cv.height);
+
+                // world -> canvas transform (고정 월드 좌표를 화면에 스케일)
+                ctx.setTransform(v.dpr * v.scale, 0, 0, v.dpr * v.scale, v.dpr * v.ox, v.dpr * v.oy);
+
                 const now = Date.now();
                 this.bodies.forEach(shape => {
                     const body = shape.body;
                     const size = SHAPES[0].size;
-                    this.ctx.save();
-                    this.ctx.translate(body.position.x, body.position.y);
-                    this.ctx.rotate(body.angle);
+                    ctx.save();
+                    ctx.translate(body.position.x, body.position.y);
+                    ctx.rotate(body.angle);
                     if (shape.isRock) this.drawRock(size, body.id, now);
                     else this.drawShape(shape.shapeIndex, SHAPES[shape.shapeIndex].size, body.id, now);
-                    this.ctx.restore();
+                    ctx.restore();
                 });
             }
 
@@ -1624,12 +1754,11 @@
 
             drawShape(shapeIndex, size, bodyId, now) {
                 const shape = SHAPES[shapeIndex];
-                const grad = this.ctx.createLinearGradient(-size, -size, size, size);
-                grad.addColorStop(0, this.lightenColor(shape.color, 15));
-                grad.addColorStop(1, this.darkenColor(shape.color, 15));
-                
-                this.ctx.fillStyle = grad;
-                this.ctx.strokeStyle = this.darkenColor(shape.color, 15);
+                // 성능: 프레임마다 그라데이션/색상 계산을 반복하지 않도록 단순 채색 + 캐시
+                if (!shape._dark) shape._dark = this.darkenColor(shape.color, 15);
+
+                this.ctx.fillStyle = shape.color;
+                this.ctx.strokeStyle = shape._dark;
                 this.ctx.lineWidth = 2;
                 
                 this.ctx.beginPath();

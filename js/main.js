@@ -194,8 +194,29 @@ let game=null;
 
 // Opp render
 const oppCtx = ui.oppCanvas ? ui.oppCanvas.getContext("2d") : null;
+
+function resizeOppCanvas(){
+  if(!ui.oppCanvas) return;
+  const cv = ui.oppCanvas;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const cssW = cv.clientWidth || 150;
+  const cssH = cv.clientHeight || 150;
+  const w = Math.max(1, Math.floor(cssW * dpr));
+  const h = Math.max(1, Math.floor(cssH * dpr));
+  if(cv.width !== w) cv.width = w;
+  if(cv.height !== h) cv.height = h;
+}
+
+resizeOppCanvas();
+window.addEventListener("resize", resizeOppCanvas);
+window.addEventListener("orientationchange", resizeOppCanvas);
+if(window.visualViewport){
+  window.visualViewport.addEventListener("resize", resizeOppCanvas);
+  window.visualViewport.addEventListener("scroll", resizeOppCanvas);
+}
 function drawOpp(state){
   if(!oppCtx || !ui.oppCanvas) return;
+  resizeOppCanvas();
   const cv = ui.oppCanvas;
   oppCtx.clearRect(0,0,cv.width,cv.height);
 
@@ -209,9 +230,9 @@ function drawOpp(state){
 
   // --- Fit inside the preview canvas with padding (prevents bottom clipping)
   // A bit more padding to prevent the bowl bottom from being clipped in the preview
-  const pad = 8;
+  const pad = 10;
   const effW = state.w;
-  const effH = state.h + 18; // allow extra space for the cup bottom (bottomY offset)
+  const effH = state.h;
 
   const sx = (cv.width - pad*2) / effW;
   const sy = (cv.height - pad*2) / effH;
@@ -260,12 +281,12 @@ function drawOppCup(ctx, cv, state, s, ox, oy){
   const centerX = w / 2;
   const radiusX = (w / 2) - inset;
   const curveTopY = h * 0.6;
-  const bottomY = h + 4; // keep consistent with the main physics cup
+  const bottomY = h - 2; // fixed world cup bottom (matches main physics)
   const radiusY = bottomY - curveTopY;
 
   // danger line: DOM uses 35px from the top in the main UI
   const padX = inset * s;
-  const dangerY = 35 * s;
+  const dangerY = (Math.max(40, h * 0.08)) * s;
 
   ctx.save();
   ctx.strokeStyle = "rgba(255,107,107,0.6)";
