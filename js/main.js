@@ -256,8 +256,9 @@ function drawOpp(state){
 
     let size = (shapes[b.i]?.size || (shapes[0]?.size || 14)) * s;
     if(size < 2) size = 2;
-    // rock은 물리적으로 1단계 크기 기반의 불규칙 다각형이라, 과도하게 키우면 실제보다 커 보임
-    if(isRock) size *= 1.05;
+    // Rock(짱돌)은 1단계 size를 기반으로 불규칙 다각형을 만들기 때문에
+    // 미리보기에서 stroke/형상이 실제보다 커 보이지 않도록 약간 축소합니다.
+    if(isRock) size *= 0.92;
 
     oppCtx.save();
     oppCtx.translate(x,y);
@@ -379,9 +380,10 @@ function poly(ctx, n, r){
 function drawRock(ctx, size){
   ctx.fillStyle = "#7f8c8d";
   ctx.strokeStyle = "#2d3436";
-  ctx.lineWidth = Math.max(1, size * 0.18);
+  // 상대 미리보기에서는 stroke가 두꺼우면 실제보다 커 보이므로 조금 얇게
+  ctx.lineWidth = Math.max(1, size * 0.14);
 
-  const r = size * 0.95;
+  const r = size * 0.9;
   ctx.beginPath();
   for(let i=0;i<6;i++){
     const ang = (Math.PI*2*i)/6;

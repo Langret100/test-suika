@@ -195,7 +195,13 @@
         
         .drop-area {
             height: 42px;
-            position: relative;
+            /*
+              터치 판정이 캔버스/그릇 뒤로 들어가 끊기는 현상을 막기 위해
+              #drop-zone(투명 오버레이)이 .game-area 까지 덮을 수 있게
+              이 컨테이너는 stacking 기준점이 되지 않도록 position을 해제합니다.
+              (오버레이는 .game-area-wrapper(position:relative)를 기준으로 배치)
+            */
+            position: static;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -216,13 +222,18 @@
         
         .drop-zone-touch {
             position: absolute;
-            /* 터치 조작 범위를 넓게 잡아, 넘침 선 근처(게임영역 상단)에서도 드래그/드랍이 되게 함 */
-            top: -8px;
+            /*
+              드랍/이동 터치 판정 오버레이
+              - 실제 그릇(캔버스) 위로 덮어 씌워 '그릇 뒤로 판정이 들어가는' 문제를 해결
+              - 넘침선(위험선) 주변에서도 조작/드랍 가능
+            */
+            top: 0;
             left: 0;
             right: 0;
-            bottom: -140px;
+            bottom: 0;
             touch-action: none;
-            z-index: 10;
+            z-index: 60;
+            background: transparent;
         }
         
         .game-area {
