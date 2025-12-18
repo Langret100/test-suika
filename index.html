@@ -981,17 +981,23 @@
             }
 
             setupPhysics() {
+                // setupPhysics()는 restart/리사이즈 흐름에서 여러 번 호출될 수 있음.
+                // 엔진이 새로 만들어질 때마다 collisionStart 핸들러를 현재 엔진에 다시 바인딩해야
+                // (온라인 매칭 시작 시 자동 restart 포함) 합체가 멈추는 버그가 발생하지 않음.
+                const prevEngine = this.engine;
+                if (!this._onCollisionStart) {
+                    this._onCollisionStart = (e) => {
+                        e.pairs.forEach(pair => this.handleCollision(pair.bodyA, pair.bodyB));
+                    };
+                }
+                if (prevEngine) {
+                    try { Matter.Events.off(prevEngine, 'collisionStart', this._onCollisionStart); } catch(e) {}
+                }
+
                 this.engine = Matter.Engine.create({ positionIterations: 10, velocityIterations: 10 });
                 this.world = this.engine.world;
                 this.engine.world.gravity.y = 1.0;
-
-                // 충돌 이벤트는 엔진당 1회만 등록(리사이즈/전체화면 시 중복 호출 방지)
-                if (!this._collisionBound) {
-                    Matter.Events.on(this.engine, 'collisionStart', (e) => {
-                        e.pairs.forEach(pair => this.handleCollision(pair.bodyA, pair.bodyB));
-                    });
-                    this._collisionBound = true;
-                }
+                Matter.Events.on(this.engine, 'collisionStart', this._onCollisionStart);
 
                 // 현재 캔버스 크기에 맞춰 그릇(바닥/벽) 경계를 구성
                 this.rebuildBounds();
@@ -1053,14 +1059,29 @@
 
             setupEvents() {
                 const dropZone = document.getElementById('drop-zone');
-                const handleStart = (e) => { if (e.cancelable) e.preventDefault(); this.initSoundOnInteraction(); const t = e.touches ? e.touches[0] : e; this.updateDropPosition(t.clientX); };
-                
-                dropZone.addEventListener('touchstart', handleStart, { passive: false });
-                dropZone.addEventListener('touchmove', (e) => { if (e.cancelable) e.preventDefault(); this.updateDropPosition(e.touches[0].clientX); }, { passive: false });
-                dropZone.addEventListener('touchend', (e) => { if (e.cancelable) e.preventDefault(); this.dropShape(); }, { passive: false });
-                dropZone.addEventListener('mousedown', handleStart);
-                dropZone.addEventListener('mousemove', (e) => { if (e.buttons === 1) this.updateDropPosition(e.clientX); });
-                dropZone.addEventListener('click', (e) => { this.initSoundOnInteraction(); this.updateDropPosition(e.clientX); this.dropShape(); });
+                // 입력(모바일/데스크톱 공통): pointer events + pointer capture
+                // - 드래그가 캔버스 밖으로 살짝 나가도 계속 따라오게("도형 위치 옮기기"가 잘 안되는 문제 완화)
+                let dragging = false;
+                dropZone.addEventListener('pointerdown', (e) => {
+                    if (e.cancelable) e.preventDefault();
+                    this.initSoundOnInteraction();
+                    dragging = true;
+                    try { dropZone.setPointerCapture(e.pointerId); } catch(err) {}
+                    this.updateDropPosition(e.clientX);
+                }, { passive: false });
+                dropZone.addEventListener('pointermove', (e) => {
+                    if (!dragging) return;
+                    if (e.cancelable) e.preventDefault();
+                    this.updateDropPosition(e.clientX);
+                }, { passive: false });
+                dropZone.addEventListener('pointerup', (e) => {
+                    if (!dragging) return;
+                    if (e.cancelable) e.preventDefault();
+                    dragging = false;
+                    try { dropZone.releasePointerCapture(e.pointerId); } catch(err) {}
+                    this.dropShape();
+                }, { passive: false });
+                dropZone.addEventListener('pointercancel', () => { dragging = false; }, { passive: true });
 
                 document.getElementById('fullscreen-btn').addEventListener('click', () => { this.initSoundOnInteraction(); this.toggleFullscreen(); });
                 document.getElementById('music-btn').addEventListener('click', () => {
@@ -1151,8 +1172,17 @@
             updateDropPosition(clientX) {
                 const rect = document.getElementById('drop-area').getBoundingClientRect();
                 const size = SHAPES[this.currentShapeIndex].size;
-                this.dropX = Math.max(size + 10, Math.min(this.width - size - 10, clientX - rect.left));
-                document.getElementById('current-shape').style.left = this.dropX + 'px';
+                // drop-area(입력 영역)과 캔버스(물리 영역) 너비가 미세하게 달라질 수 있음(모바일/전체화면)
+                // -> 입력 좌표를 캔버스 좌표로 스케일해서 "잘 안 옮겨지는" 느낌을 줄임
+                const dropW = Math.max(1, rect.width || this.width);
+                const scale = this.width / dropW;
+                const localX = (clientX - rect.left);
+                const x = localX * scale;
+
+                this.dropX = Math.max(size + 10, Math.min(this.width - size - 10, x));
+                // current-shape는 drop-area 내부 기준으로 움직이므로 역스케일로 표시
+                const leftPx = this.dropX / scale;
+                document.getElementById('current-shape').style.left = leftPx + 'px';
             }
 
             generateNextShape() {
@@ -1172,7 +1202,15 @@
 
             updatePreview() {
                 document.getElementById('current-shape').innerHTML = this.createShapeSVG(this.currentShapeIndex, SHAPES[this.currentShapeIndex].size);
-                document.getElementById('current-shape').style.left = this.dropX + 'px';
+                // drop-area와 캔버스 너비 차이를 반영해 표시 위치도 맞춤
+                try{
+                    const rect = document.getElementById('drop-area').getBoundingClientRect();
+                    const dropW = Math.max(1, rect.width || this.width);
+                    const scale = this.width / dropW;
+                    document.getElementById('current-shape').style.left = (this.dropX / scale) + 'px';
+                }catch{
+                    document.getElementById('current-shape').style.left = this.dropX + 'px';
+                }
                 document.getElementById('next-shape').innerHTML = this.createShapeSVG(this.nextShapeIndex, 14);
             }
 

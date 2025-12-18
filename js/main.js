@@ -208,9 +208,10 @@ function drawOpp(state){
   const shapes = window.SHAPES || [];
 
   // --- Fit inside the preview canvas with padding (prevents bottom clipping)
-  const pad = 6;
+  // A bit more padding to prevent the bowl bottom from being clipped in the preview
+  const pad = 8;
   const effW = state.w;
-  const effH = state.h + 8; // allow a tiny extra space for the cup bottom (bottomY offset)
+  const effH = state.h + 18; // allow extra space for the cup bottom (bottomY offset)
 
   const sx = (cv.width - pad*2) / effW;
   const sy = (cv.height - pad*2) / effH;
