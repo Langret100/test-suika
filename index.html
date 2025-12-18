@@ -216,10 +216,11 @@
         
         .drop-zone-touch {
             position: absolute;
-            top: 0;
+            /* 터치 조작 범위를 넓게 잡아, 넘침 선 근처(게임영역 상단)에서도 드래그/드랍이 되게 함 */
+            top: -8px;
             left: 0;
             right: 0;
-            bottom: 0;
+            bottom: -140px;
             touch-action: none;
             z-index: 10;
         }

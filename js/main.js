@@ -65,10 +65,10 @@ setStatus("오프라인");
 
 function comboToRocks(combo){
   const c = combo|0;
-  if(c < 3) return 0;
-  if(c === 3) return 1;
-  if(c === 4) return 2;
-  return Math.min(6, c - 2);
+  // 2콤보부터 돌 공격: 2콤보=2개, 3콤보=3개 ...
+  // 과도한 난이도/부하를 막기 위해 상한을 둔다.
+  if(c < 2) return 0;
+  return Math.min(10, c);
 }
 
 let waitTimer = null;
@@ -256,7 +256,8 @@ function drawOpp(state){
 
     let size = (shapes[b.i]?.size || (shapes[0]?.size || 14)) * s;
     if(size < 2) size = 2;
-    if(isRock) size *= 2;
+    // rock은 물리적으로 1단계 크기 기반의 불규칙 다각형이라, 과도하게 키우면 실제보다 커 보임
+    if(isRock) size *= 1.05;
 
     oppCtx.save();
     oppCtx.translate(x,y);
