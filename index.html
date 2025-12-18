@@ -208,8 +208,9 @@
             transform: translateX(-50%);
             z-index: 20;
             pointer-events: none;
-            transition: left 0.05s ease-out;
-        }
+            transition: none;
+            will-change: left;
+}
         
         .drop-zone-touch {
             position: absolute;
@@ -1060,20 +1061,30 @@
             setupEvents() {
                 const dropZone = document.getElementById('drop-zone');
                 // 입력(모바일/데스크톱 공통): pointer events + pointer capture
-                // - 드래그가 캔버스 밖으로 살짝 나가도 계속 따라오게("도형 위치 옮기기"가 잘 안되는 문제 완화)
+                // - coalesced events를 사용해(지원 브라우저) 손가락을 더 "즉시" 따라오게 함
+                // - drop-zone 기준 rect로 좌표 변환(전체화면/모바일에서 offset/scale 오차 감소)
                 let dragging = false;
+                const currentShapeEl = document.getElementById('current-shape');
+
                 dropZone.addEventListener('pointerdown', (e) => {
                     if (e.cancelable) e.preventDefault();
                     this.initSoundOnInteraction();
                     dragging = true;
                     try { dropZone.setPointerCapture(e.pointerId); } catch(err) {}
-                    this.updateDropPosition(e.clientX);
+                    const rect = dropZone.getBoundingClientRect();
+                    this.updateDropPosition(e.clientX, rect);
                 }, { passive: false });
+
                 dropZone.addEventListener('pointermove', (e) => {
                     if (!dragging) return;
                     if (e.cancelable) e.preventDefault();
-                    this.updateDropPosition(e.clientX);
+                    const rect = dropZone.getBoundingClientRect();
+                    // 더 촘촘한 이벤트가 있으면 마지막(coalesced) 좌표를 사용
+                    const evs = (typeof e.getCoalescedEvents === 'function') ? e.getCoalescedEvents() : null;
+                    const last = (evs && evs.length) ? evs[evs.length - 1] : e;
+                    this.updateDropPosition(last.clientX, rect);
                 }, { passive: false });
+
                 dropZone.addEventListener('pointerup', (e) => {
                     if (!dragging) return;
                     if (e.cancelable) e.preventDefault();
@@ -1081,6 +1092,7 @@
                     try { dropZone.releasePointerCapture(e.pointerId); } catch(err) {}
                     this.dropShape();
                 }, { passive: false });
+
                 dropZone.addEventListener('pointercancel', () => { dragging = false; }, { passive: true });
 
                 document.getElementById('fullscreen-btn').addEventListener('click', () => { this.initSoundOnInteraction(); this.toggleFullscreen(); });
@@ -1169,20 +1181,24 @@
                 else (document.exitFullscreen || document.webkitExitFullscreen).call(document);
             }
 
-            updateDropPosition(clientX) {
-                const rect = document.getElementById('drop-area').getBoundingClientRect();
+            updateDropPosition(clientX, rectOverride=null) {
+                const rect = rectOverride || document.getElementById('drop-zone').getBoundingClientRect();
                 const size = SHAPES[this.currentShapeIndex].size;
-                // drop-area(입력 영역)과 캔버스(물리 영역) 너비가 미세하게 달라질 수 있음(모바일/전체화면)
-                // -> 입력 좌표를 캔버스 좌표로 스케일해서 "잘 안 옮겨지는" 느낌을 줄임
-                const dropW = Math.max(1, rect.width || this.width);
-                const scale = this.width / dropW;
+
+                // drop-zone(입력 영역)과 캔버스(물리 영역) 너비가 달라질 수 있음(모바일/전체화면)
+                // -> 입력 좌표를 캔버스 좌표로 스케일해 "즉시 따라오는" 느낌을 강화
+                const inputW = Math.max(1, rect.width || this.width);
+                const scale = this.width / inputW;
+
                 const localX = (clientX - rect.left);
                 const x = localX * scale;
 
                 this.dropX = Math.max(size + 10, Math.min(this.width - size - 10, x));
-                // current-shape는 drop-area 내부 기준으로 움직이므로 역스케일로 표시
+
+                // current-shape는 drop-area 내부 기준으로 표시되므로 역스케일로 표시(레이아웃/리사이즈에도 일관)
                 const leftPx = this.dropX / scale;
-                document.getElementById('current-shape').style.left = leftPx + 'px';
+                const el = document.getElementById('current-shape');
+                if(el) el.style.left = leftPx + 'px';
             }
 
             generateNextShape() {

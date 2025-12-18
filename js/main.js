@@ -473,6 +473,41 @@ function onRoomUpdate(room){
     waitTimer = null;
     waitRemain = 0;
 
+    // 매칭 중(혼자 플레이 중) 연결되었으면, 반드시 "새 판"으로 동기 시작해야 함
+    // meta.state가 이미 playing이어도 첫 연결에서는 starting 으로 강제 전환하고 동시에 restart
+    if(mode === "matching" && !startArmed){
+      const desiredStartAt = Date.now() + 900;
+
+      // Force a synchronized start window for this new match
+      try{
+        api.runTransaction(refs.metaRef, (m)=>{
+          if(!m) return m;
+          const prev = m.state || "open";
+          m.state = "starting";
+          // keep existing startAt only if it's already a starting window
+          m.startAt = (typeof m.startAt === "number" && prev === "starting") ? m.startAt : desiredStartAt;
+          m.updatedAt = Date.now();
+          return m;
+        }).catch(()=>{});
+      }catch{}
+
+      startArmed = true;
+      try{ if(game) game.canDrop = false; }catch{}
+      showNetOverlay({ title: "연결되었습니다!", desc: "게임 시작", seconds: undefined, canClose: false, canRetry: false, kind: "starting" });
+
+      try{ if(startTimeout) clearTimeout(startTimeout); }catch{}
+      const ms = Math.max(0, ((meta.startAt || desiredStartAt)|0) - Date.now());
+      startTimeout = setTimeout(()=>{
+        startTimeout = null;
+        hideNetOverlay();
+        try{ window.__shapeGame?.restart?.(); }catch{}
+        try{ if(game) game.canDrop = true; }catch{}
+        setRoomState({ api, metaRef: refs.metaRef }, "playing").catch(()=>{});
+        mode = "online";
+      }, ms);
+      return;
+    }
+
     // request a synchronized start window if still open
     if(meta.state === "open" || !meta.state){
       api.runTransaction(refs.metaRef, (m)=>{
