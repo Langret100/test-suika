@@ -1298,6 +1298,80 @@
                 document.addEventListener('webkitfullscreenchange', onResize);
             }
 
+            // ---- Shake (Cup) ----
+            shakeCup() {
+                if (this.shakeRemaining <= 0 || this.isGameOver) return;
+                this.shakeRemaining--;
+                this.updateShakeButton();
+                try { this.sound.playShake(); } catch(e) {}
+                if (this.gameArea) {
+                    this.gameArea.classList.add('shaking');
+                    setTimeout(() => this.gameArea.classList.remove('shaking'), 400);
+                }
+                // Apply impulse to all shapes
+                this.bodies.forEach(s => {
+                    try {
+                        Matter.Body.applyForce(s.body, s.body.position, {
+                            x: (Math.random() - 0.5) * 0.04,
+                            y: -0.02 - Math.random() * 0.02
+                        });
+                        this.setExpression(s.id, EXPRESSIONS.SURPRISED, 800);
+                    } catch(e) {}
+                });
+            }
+
+            updateShakeButton() {
+                const cnt = document.getElementById('shake-count');
+                const btn = document.getElementById('shake-btn');
+                if (cnt) cnt.textContent = `X${this.shakeRemaining}`;
+                if (btn) btn.disabled = this.shakeRemaining <= 0;
+            }
+
+            // ---- Auto-drop: idle 3s -> warning + 3-2-1 -> auto drop ----
+            resetAutoDropTimer(){
+                this._spawnTs = Date.now();
+                this._autoWarnActive = false;
+                this._autoCountdown = 0;
+                if(this._autoTimer){ try{ clearInterval(this._autoTimer); }catch{} this._autoTimer = null; }
+                if(this.autoWarnEl){
+                    this.autoWarnEl.classList.remove('show');
+                    this.autoWarnEl.setAttribute('aria-hidden','true');
+                }
+            }
+
+            startAutoDropCountdown(){
+                if(this._autoWarnActive || this.isGameOver) return;
+                this._autoWarnActive = true;
+                this._autoCountdown = 3;
+                if(this.autoCountEl) this.autoCountEl.textContent = String(this._autoCountdown);
+                if(this.autoWarnEl){
+                    this.autoWarnEl.classList.add('show');
+                    this.autoWarnEl.setAttribute('aria-hidden','false');
+                }
+                if(this._autoTimer){ try{ clearInterval(this._autoTimer); }catch{} }
+                this._autoTimer = setInterval(()=>{
+                    if(this.isGameOver){ this.resetAutoDropTimer(); return; }
+                    if(!this.canDrop){ this.resetAutoDropTimer(); return; }
+                    this._autoCountdown -= 1;
+                    if(this._autoCountdown <= 0){
+                        this.resetAutoDropTimer();
+                        this.dropShape(true);
+                        return;
+                    }
+                    if(this.autoCountEl) this.autoCountEl.textContent = String(this._autoCountdown);
+                }, 1000);
+            }
+
+            tickAutoDrop(){
+                if(this.isGameOver) return;
+                if(!this.canDrop) return;
+                if(this._autoWarnActive) return;
+                const elapsed = Date.now() - (this._spawnTs || Date.now());
+                if(elapsed >= 3000){
+                    this.startAutoDropCountdown();
+                }
+            }
+
             updateDropPosition(clientX) {
                 // pointermove마다 layout 측정(getBoundingClientRect)을 하지 않고,
                 // pointerdown 때 캐시한 맵을 사용해 끊김/지연을 줄임
@@ -1343,15 +1417,21 @@
             updatePreview() {
                 const cur = document.getElementById('current-shape');
                 const nxt = document.getElementById('next-shape');
-                if (cur) cur.innerHTML = this.createShapeSVG(this.currentShapeIndex);
-                if (nxt) nxt.innerHTML = this.createShapeSVG(this.nextShapeIndex, true);
+                const curSize = (SHAPES[this.currentShapeIndex] && SHAPES[this.currentShapeIndex].size) ? SHAPES[this.currentShapeIndex].size : 14;
+                if (cur) cur.innerHTML = this.createShapeSVG(this.currentShapeIndex, curSize);
+                if (nxt) nxt.innerHTML = this.createShapeSVG(this.nextShapeIndex, 14);
+
+                // 현재 위치(dropX)를 기준으로 UI 위치도 즉시 동기화
                 this.updateCurrentShapeUI();
             }
 
             
 
             createShapeSVG(index, size) {
-                const shape = SHAPES[index];
+                const shape = SHAPES[index] || SHAPES[0];
+                const fallback = (shape && Number.isFinite(shape.size)) ? shape.size : 14;
+                const s = Number(size);
+                size = Number.isFinite(s) && s > 0 ? s : fallback;
                 const vs = size*2.4, cx = vs/2, cy = vs/2, r = size;
                 const es = Math.max(1.5, size*0.1), eg = size*0.28, ey = cy - size*0.05;
                 const my = cy + size*0.25, mw = size*0.25;

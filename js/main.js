@@ -230,7 +230,8 @@ function drawOpp(state){
 
   // --- Fit inside the preview canvas with padding (prevents bottom clipping)
   // A bit more padding to prevent the bowl bottom from being clipped in the preview
-  const pad = 10;
+  // extra padding to avoid clipping the bowl stroke at the bottom on some devices
+  const pad = 14;
   const effW = state.w;
   const effH = state.h;
 
@@ -238,8 +239,9 @@ function drawOpp(state){
   const sy = (cv.height - pad*2) / effH;
   const s = Math.min(sx, sy);
 
-  const ox = (cv.width - effW * s) / 2;
-  const oy = (cv.height - effH * s) / 2;
+  // ensure at least `pad` pixels margin (stroke-safe)
+  const ox = Math.max(pad, (cv.width - effW * s) / 2);
+  const oy = Math.max(pad, (cv.height - effH * s) / 2);
 
   // Draw opponent bowl outline + danger line (same geometry as the real physics cup)
   drawOppCup(oppCtx, cv, state, s, ox, oy);
